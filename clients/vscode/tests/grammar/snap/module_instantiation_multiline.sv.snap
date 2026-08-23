@@ -5,44 +5,39 @@
 #       ^^^ source.systemverilog meta.module.systemverilog entity.name.type.module.systemverilog
 #          ^ source.systemverilog meta.module.systemverilog punctuation.definition.module.end.systemverilog
 >    some_module
-#^^^^ source.systemverilog meta.module.no_parameters.systemverilog
-#    ^^^^^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog entity.name.type.module.systemverilog
+#^^^^ source.systemverilog meta.port-net-parameter.declaration.systemverilog
+#    ^^^^^^^^^^^ source.systemverilog meta.port-net-parameter.declaration.systemverilog variable.other.identifier.systemverilog
 >    inst_name
-#^^^^ source.systemverilog meta.module.no_parameters.systemverilog
-#    ^^^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog variable.other.module.systemverilog
+#^^^^ source.systemverilog meta.port-net-parameter.declaration.systemverilog
+#    ^^^^^^^^^ source.systemverilog meta.port-net-parameter.declaration.systemverilog variable.other.identifier.systemverilog
 >        (.A(sig_a)
-#^^^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog
-#         ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
-#          ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog support.function.port.systemverilog
-#           ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
-#            ^^^^^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog variable.other.identifier.systemverilog
-#                 ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
+#^^^^^^^^^^ source.systemverilog
+#          ^ source.systemverilog constant.other.net.systemverilog
+#           ^ source.systemverilog
+#            ^^^^^ source.systemverilog variable.other.identifier.systemverilog
+#                 ^^ source.systemverilog
 >        ,.B(/* TODO */)
-#^^^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog
-#         ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
-#          ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog support.function.port.systemverilog
-#           ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
-#            ^^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog comment.block.systemverilog punctuation.definition.comment.systemverilog
-#              ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog comment.block.systemverilog
-#               ^^^^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog comment.block.systemverilog invalid.unimplemented.todo.systemverilog
-#                   ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog comment.block.systemverilog
-#                    ^^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog comment.block.systemverilog punctuation.definition.comment.systemverilog
-#                      ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
+#^^^^^^^^^^ source.systemverilog
+#          ^ source.systemverilog constant.other.net.systemverilog
+#           ^ source.systemverilog
+#            ^^ source.systemverilog comment.block.systemverilog punctuation.definition.comment.systemverilog
+#              ^ source.systemverilog comment.block.systemverilog
+#               ^^^^ source.systemverilog comment.block.systemverilog invalid.unimplemented.todo.systemverilog
+#                   ^ source.systemverilog comment.block.systemverilog
+#                    ^^ source.systemverilog comment.block.systemverilog punctuation.definition.comment.systemverilog
+#                      ^^ source.systemverilog
 >        ,.X(/* TODO */)
-#^^^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog
-#         ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
-#          ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog support.function.port.systemverilog
-#           ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
-#            ^^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog comment.block.systemverilog punctuation.definition.comment.systemverilog
-#              ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog comment.block.systemverilog
-#               ^^^^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog comment.block.systemverilog invalid.unimplemented.todo.systemverilog
-#                   ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog comment.block.systemverilog
-#                    ^^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog comment.block.systemverilog punctuation.definition.comment.systemverilog
-#                      ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
+#^^^^^^^^^^ source.systemverilog
+#          ^ source.systemverilog constant.other.net.systemverilog
+#           ^ source.systemverilog
+#            ^^ source.systemverilog comment.block.systemverilog punctuation.definition.comment.systemverilog
+#              ^ source.systemverilog comment.block.systemverilog
+#               ^^^^ source.systemverilog comment.block.systemverilog invalid.unimplemented.todo.systemverilog
+#                   ^ source.systemverilog comment.block.systemverilog
+#                    ^^ source.systemverilog comment.block.systemverilog punctuation.definition.comment.systemverilog
+#                      ^^ source.systemverilog
 >        );
-#^^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog
-#        ^ source.systemverilog meta.module.no_parameters.systemverilog
-#         ^ source.systemverilog meta.module.no_parameters.systemverilog punctuation.module.instantiation.end.systemverilog
+#^^^^^^^^^^^ source.systemverilog
 >
 #^ source.systemverilog
 >    some_module #(
@@ -99,85 +94,73 @@
 >
 #^ source.systemverilog
 >    parameterized_block
-#^^^^ source.systemverilog meta.module.no_parameters.systemverilog
-#    ^^^^^^^^^^^^^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog entity.name.type.module.systemverilog
+#^^^^ source.systemverilog meta.port-net-parameter.declaration.systemverilog
+#    ^^^^^^^^^^^^^^^^^^^ source.systemverilog meta.port-net-parameter.declaration.systemverilog variable.other.identifier.systemverilog
 >    #(.param_a(width_a),
-#^^^^ source.systemverilog meta.module.no_parameters.systemverilog
-#    ^ source.systemverilog meta.module.no_parameters.systemverilog keyword.operator.channel.systemverilog
-#     ^ source.systemverilog meta.module.no_parameters.systemverilog
-#      ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
-#       ^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog support.function.port.systemverilog
-#              ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
-#               ^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog variable.other.identifier.systemverilog
-#                      ^^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
+#^^^^ source.systemverilog
+#    ^ source.systemverilog keyword.operator.channel.systemverilog
+#     ^^ source.systemverilog
+#       ^^^^^^^ source.systemverilog variable.other.identifier.systemverilog
+#              ^ source.systemverilog
+#               ^^^^^^^ source.systemverilog variable.other.identifier.systemverilog
+#                      ^^^ source.systemverilog
 >         .param_b(width_b),
-#^^^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog
-#         ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
-#          ^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog support.function.port.systemverilog
-#                 ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
-#                  ^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog variable.other.identifier.systemverilog
-#                         ^^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
+#^^^^^^^^^^ source.systemverilog
+#          ^^^^^^^ source.systemverilog variable.other.identifier.systemverilog
+#                 ^ source.systemverilog
+#                  ^^^^^^^ source.systemverilog variable.other.identifier.systemverilog
+#                         ^^^ source.systemverilog
 >         .param_c(width_c))
-#^^^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog
-#         ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
-#          ^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog support.function.port.systemverilog
-#                 ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
-#                  ^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog variable.other.identifier.systemverilog
-#                         ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
-#                          ^^ source.systemverilog meta.module.no_parameters.systemverilog
+#^^^^^^^^^^ source.systemverilog
+#          ^^^^^^^ source.systemverilog variable.other.identifier.systemverilog
+#                 ^ source.systemverilog
+#                  ^^^^^^^ source.systemverilog variable.other.identifier.systemverilog
+#                         ^^^ source.systemverilog
 >    block_inst
-#^^^^ source.systemverilog meta.module.no_parameters.systemverilog
-#    ^^^^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog variable.other.module.systemverilog
+#^^^^ source.systemverilog meta.port-net-parameter.declaration.systemverilog
+#    ^^^^^^^^^^ source.systemverilog meta.port-net-parameter.declaration.systemverilog variable.other.identifier.systemverilog
 >       (.signal_a,
-#^^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog
-#        ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.implicit.systemverilog
-#         ^^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.implicit.systemverilog support.function.port.systemverilog
-#                 ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.implicit.systemverilog
+#^^^^^^^^^ source.systemverilog
+#         ^^^^^^^^ source.systemverilog meta.port-net-parameter.declaration.systemverilog variable.other.identifier.systemverilog
+#                 ^^ source.systemverilog
 >
-#^ source.systemverilog meta.module.no_parameters.systemverilog
+#^ source.systemverilog
 >        .signal_b,
-#^^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog
-#        ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.implicit.systemverilog
-#         ^^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.implicit.systemverilog support.function.port.systemverilog
-#                 ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.implicit.systemverilog
+#^^^^^^^^^ source.systemverilog
+#         ^^^^^^^^ source.systemverilog meta.port-net-parameter.declaration.systemverilog variable.other.identifier.systemverilog
+#                 ^^ source.systemverilog
 >        .signal_c,
-#^^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog
-#        ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.implicit.systemverilog
-#         ^^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.implicit.systemverilog support.function.port.systemverilog
-#                 ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.implicit.systemverilog
+#^^^^^^^^^ source.systemverilog
+#         ^^^^^^^^ source.systemverilog meta.port-net-parameter.declaration.systemverilog variable.other.identifier.systemverilog
+#                 ^^ source.systemverilog
 >
-#^ source.systemverilog meta.module.no_parameters.systemverilog
+#^ source.systemverilog
 >        .signal_d,
-#^^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog
-#        ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.implicit.systemverilog
-#         ^^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.implicit.systemverilog support.function.port.systemverilog
-#                 ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.implicit.systemverilog
+#^^^^^^^^^ source.systemverilog
+#         ^^^^^^^^ source.systemverilog meta.port-net-parameter.declaration.systemverilog variable.other.identifier.systemverilog
+#                 ^^ source.systemverilog
 >
-#^ source.systemverilog meta.module.no_parameters.systemverilog
+#^ source.systemverilog
 >        .signal_e(bus_e[IDX]),
-#^^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog
-#        ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
-#         ^^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog support.function.port.systemverilog
-#                 ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
-#                  ^^^^^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog variable.other.identifier.systemverilog
-#                       ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
-#                        ^^^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog constant.other.net.systemverilog
-#                           ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
-#                            ^^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
+#^^^^^^^^^ source.systemverilog
+#         ^^^^^^^^ source.systemverilog variable.other.identifier.systemverilog
+#                 ^ source.systemverilog
+#                  ^^^^^ source.systemverilog variable.other.identifier.systemverilog
+#                       ^ source.systemverilog meta.brackets.select.systemverilog punctuation.slice.brackets.begin
+#                        ^^^ source.systemverilog meta.brackets.select.systemverilog constant.other.net.systemverilog
+#                           ^ source.systemverilog meta.brackets.select.systemverilog punctuation.slice.brackets.end
+#                            ^^^ source.systemverilog
 >
-#^ source.systemverilog meta.module.no_parameters.systemverilog
+#^ source.systemverilog
 >        .signal_f(bus_f[IDX]));
-#^^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog
-#        ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
-#         ^^^^^^^^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog support.function.port.systemverilog
-#                 ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
-#                  ^^^^^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog variable.other.identifier.systemverilog
-#                       ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
-#                        ^^^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog constant.other.net.systemverilog
-#                           ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
-#                            ^ source.systemverilog meta.module.no_parameters.systemverilog meta.port.binding.systemverilog
-#                             ^ source.systemverilog meta.module.no_parameters.systemverilog
-#                              ^ source.systemverilog meta.module.no_parameters.systemverilog punctuation.module.instantiation.end.systemverilog
+#^^^^^^^^^ source.systemverilog
+#         ^^^^^^^^ source.systemverilog variable.other.identifier.systemverilog
+#                 ^ source.systemverilog
+#                  ^^^^^ source.systemverilog variable.other.identifier.systemverilog
+#                       ^ source.systemverilog meta.brackets.select.systemverilog punctuation.slice.brackets.begin
+#                        ^^^ source.systemverilog meta.brackets.select.systemverilog constant.other.net.systemverilog
+#                           ^ source.systemverilog meta.brackets.select.systemverilog punctuation.slice.brackets.end
+#                            ^^^^ source.systemverilog
 >endmodule
 #^^^^^^^^^ source.systemverilog meta.item.end.systemverilog keyword.control.systemverilog
 >
