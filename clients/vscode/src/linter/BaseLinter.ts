@@ -51,7 +51,9 @@ export abstract class BaseLinter extends ExtensionComponent {
     }
 
     const args = [...this.toolArgs(doc)]
-    args.push(...this.args.getValue())
+    for (const arg of this.args.getValue()) {
+      args.push(...arg.split(/\s+/))
+    }
     args.push(doc.uri.fsPath)
 
     const cwd = workspaceFolder ?? path.dirname(doc.uri.fsPath)
