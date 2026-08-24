@@ -463,6 +463,10 @@ export class ProjectComponent
       this.topFile = uri
       await slang.setTopLevel(uri.fsPath)
       await this.refreshSlangCompilation()
+      const editor = vscode.window.activeTextEditor
+      if (editor) {
+        await ext.lintManager.lint(editor.document)
+      }
     }
   )
 
@@ -525,6 +529,12 @@ export class ProjectComponent
       this._onDidChangeTreeData.fire()
       await slang.setBuildFile('')
       this.focusedBar.hide()
+
+      ext.lintManager.verilator.clearAll()
+      const editor = vscode.window.activeTextEditor
+      if (editor) {
+        await ext.lintManager.lint(editor.document)
+      }
     }
   )
 

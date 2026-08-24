@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import * as vscode from 'vscode'
+import { ext } from '../extension'
 import { ExtensionComponent } from '../lib/libconfig'
 import { getWorkspaceFolder, isAnyVerilog } from '../utils'
 import { BaseLinter } from './BaseLinter'
@@ -43,7 +44,20 @@ export class LintManager extends ExtensionComponent {
     })
   }
 
-  private async lint(doc: vscode.TextDocument): Promise<void> {
+  async lint(doc: vscode.TextDocument): Promise<void> {
+    const topFile = ext?.project?.topFile
+    if (topFile) {
+      try {
+        const topDoc = await vscode.workspace.openTextDocument(topFile)
+        this.logger.info(`linting top-level ${topDoc.uri.fsPath}`)
+        const workspaceFolder = getWorkspaceFolder()
+        await Promise.all(this.linters.map((l) => l.lint(topDoc, workspaceFolder)))
+      } catch (e: any) {
+        this.logger.error(`failed to lint top file: ${e.message}`)
+      }
+      return
+    }
+
     if (!isAnyVerilog(doc.languageId)) {
       return
     }
@@ -53,6 +67,9 @@ export class LintManager extends ExtensionComponent {
   }
 
   private removeDiagnostics(doc: vscode.TextDocument): void {
+    if (ext?.project?.topFile) {
+      return
+    }
     for (const linter of this.linters) {
       linter.clear(doc)
     }
