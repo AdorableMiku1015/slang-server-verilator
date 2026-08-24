@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import * as vscode from 'vscode'
 import { isSystemVerilog } from '../utils'
-import { BaseLinter, LintOutput } from './BaseLinter'
+import { BaseLinter, FileDiagnostic, LintOutput } from './BaseLinter'
 
 export class VerilatorLinter extends BaseLinter {
   constructor() {
@@ -16,8 +16,8 @@ export class VerilatorLinter extends BaseLinter {
     return args
   }
 
-  protected parseDiagnostics(_doc: vscode.TextDocument, output: LintOutput): vscode.Diagnostic[] {
-    const diagnostics: vscode.Diagnostic[] = []
+  protected parseDiagnostics(_doc: vscode.TextDocument, output: LintOutput): FileDiagnostic[] {
+    const diagnostics: FileDiagnostic[] = []
     const lines = output.stderr.split(/\r?\n/)
 
     for (let n = 0; n < lines.length; n++) {
@@ -35,6 +35,7 @@ export class VerilatorLinter extends BaseLinter {
 
       const severity = rex[1]
       const warningType = rex[2] !== undefined ? rex[2].substring(1) : ''
+      const file = rex[3]
       const lineNum = Number(rex[4]) - 1
       const colNum = Number(rex[5]) - 1
       const msg = rex[6]
@@ -45,15 +46,16 @@ export class VerilatorLinter extends BaseLinter {
       n += 2
 
       if (!isNaN(lineNum)) {
-        const diagnostic = new vscode.Diagnostic(
-          new vscode.Range(lineNum, colNum, lineNum, colNum + elen),
-          msg,
-          this.convertSeverity(severity)
-        )
+        const diagnostic: FileDiagnostic = {
+          file: file,
+          range: new vscode.Range(lineNum, colNum, lineNum, colNum + elen),
+          severity: this.convertSeverity(severity),
+          message: msg,
+          source: 'verilator',
+        }
         if (warningType) {
           diagnostic.code = warningType
         }
-        diagnostic.source = 'verilator'
         diagnostics.push(diagnostic)
       }
     }

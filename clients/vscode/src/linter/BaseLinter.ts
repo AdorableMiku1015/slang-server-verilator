@@ -3,10 +3,15 @@ import * as child_process from 'child_process'
 import * as path from 'path'
 import * as vscode from 'vscode'
 import { ConfigObject, ExtensionComponent } from '../lib/libconfig'
+import { getWorkspaceFolder } from '../utils'
 
 export interface LintOutput {
   stdout: string
   stderr: string
+}
+
+export interface FileDiagnostic extends vscode.Diagnostic {
+  file: string
 }
 
 export abstract class BaseLinter extends ExtensionComponent {
@@ -66,7 +71,7 @@ export abstract class BaseLinter extends ExtensionComponent {
         this.logger.info(output.stderr)
       }
       const diags = this.parseDiagnostics(doc, output)
-      this.diagnostics.set(doc.uri, diags)
+      this.applyDiagnostics(doc, diags)
     } catch (e: any) {
       this.logger.error(`${this.toolName} lint failed: ${e.message}`)
     }
@@ -81,7 +86,32 @@ export abstract class BaseLinter extends ExtensionComponent {
   }
 
   protected abstract toolArgs(doc: vscode.TextDocument): string[]
-  protected abstract parseDiagnostics(doc: vscode.TextDocument, output: LintOutput): vscode.Diagnostic[]
+  protected abstract parseDiagnostics(doc: vscode.TextDocument, output: LintOutput): FileDiagnostic[]
+
+  private applyDiagnostics(doc: vscode.TextDocument, diags: FileDiagnostic[]) {
+    const wsFolder = getWorkspaceFolder()
+    const fmap = new Map<string, FileDiagnostic[]>()
+    for (const diag of diags) {
+      const key = diag.file
+      if (!fmap.has(key)) {
+        fmap.set(key, [])
+      }
+      fmap.get(key)!.push(diag)
+    }
+
+    this.diagnostics.clear()
+    for (const [file, fileDiags] of fmap.entries()) {
+      let uri: vscode.Uri
+      if (path.isAbsolute(file)) {
+        uri = vscode.Uri.file(file)
+      } else if (wsFolder) {
+        uri = vscode.Uri.joinPath(vscode.Uri.file(wsFolder), file)
+      } else {
+        uri = doc.uri
+      }
+      this.diagnostics.set(uri, fileDiags)
+    }
+  }
 
   private runTool(
     command: string,
