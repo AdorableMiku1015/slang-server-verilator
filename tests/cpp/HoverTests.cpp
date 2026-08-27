@@ -82,6 +82,173 @@ endmodule
           doc.before("`DEFINE_DEFAULT(FEATURE_ENABLE").getPosition());
 }
 
+TEST_CASE("HoverFieldsOfInvalidStructType") {
+    ServerHarness server;
+    auto doc = server.openFile("invalid_struct_field.sv", R"(
+module top;
+    typedef struct packed {
+        logic good;
+        real invalid;
+        logic other;
+    } partial_t;
+
+    partial_t value;
+    initial $display(value.good, value.invalid, value.other);
+endmodule
+)");
+
+    auto checkHover = [&](size_t offset, std::string_view name, std::string_view type) {
+        auto hover = doc.getHoverAt(offset);
+        REQUIRE(hover);
+        auto content = rfl::get<lsp::MarkupContent>(hover->contents).value;
+        CAPTURE(name, content);
+        CHECK(content.find("**Field** `" + std::string(name) + "`") != std::string::npos);
+        CHECK(content.find("Type: `" + std::string(type) + "`") != std::string::npos);
+        CHECK(content.find("Declared Type:") == std::string::npos);
+    };
+
+    checkHover(doc.before("good;").m_offset, "good", "logic");
+    checkHover(doc.before("invalid;").m_offset, "invalid", "real");
+    checkHover(doc.before("other;").m_offset, "other", "logic");
+    checkHover(doc.after("value.").m_offset, "good", "logic");
+    checkHover(doc.after("value.good, value.").m_offset, "invalid", "real");
+    checkHover(doc.after("value.invalid, value.").m_offset, "other", "logic");
+}
+
+TEST_CASE("HoverLinksUseFriendlyAnonymousTypeNames") {
+    ServerHarness server;
+    auto doc = server.openFile("anonymous_type.sv", R"(
+module top;
+    struct { logic member; } value;
+    initial value.member = 1;
+endmodule
+)");
+
+    auto hover = doc.getHoverAt(doc.before("value.member").m_offset);
+    REQUIRE(hover);
+    auto content = rfl::get<lsp::MarkupContent>(hover->contents).value;
+    CAPTURE(content);
+    CHECK(content.find("Type: [`UnpackedStruct struct") != std::string::npos);
+    CHECK(content.find("s$") == std::string::npos);
+}
+
+TEST_CASE("HoverDriversGeneratedByMacroUseExpansionLocation") {
+    ServerHarness server;
+
+    auto header = server.openFile("driver_macros.svh", R"(
+`define DRIVE_PAIR(clk, value) \
+    always_comb value = 1'b0; \
+    always_ff @(posedge clk) value <= 1'b1;
+)");
+    auto doc = server.openFile("test.sv", R"(
+`include "driver_macros.svh"
+module top;
+    logic clk;
+    logic value;
+    `DRIVE_PAIR(clk, value)
+endmodule
+)");
+
+    auto hover = doc.getHoverAt(doc.before("value;").m_offset);
+    REQUIRE(hover);
+    auto content = rfl::get<lsp::MarkupContent>(hover->contents).value;
+    CAPTURE(content);
+    CHECK(content.find("Driven by always_comb at [test.sv:6:5]") != std::string::npos);
+    CHECK(content.find("Driven by always_ff at [test.sv:6:5]") != std::string::npos);
+    CHECK(countSubstring(content, "Expanded from") == 2);
+    CHECK(countSubstring(content, "`DRIVE_PAIR(clk, value)") == 2);
+    CHECK(content.find("driver_macros.svh#L") == std::string::npos);
+
+    auto combHeader = content.find("Driven by always_comb");
+    auto combExpansion = content.find("Expanded from", combHeader);
+    auto nextSection = content.find("\n\n---\n\n", combHeader);
+    CHECK(combHeader < combExpansion);
+    CHECK(combExpansion < nextSection);
+}
+
+TEST_CASE("HoverDriverSyntaxListSeparatesNodes") {
+    ServerHarness server;
+
+    auto header = server.openFile("driver_macros.svh", R"(
+`define CONNECT_PAIR(value) producer u(.a(value), .b(value))
+)");
+    auto doc = server.openFile("test.sv", R"(
+`include "driver_macros.svh"
+module producer(output logic a, output logic b);
+    assign a = 1'b0;
+    assign b = 1'b1;
+endmodule
+module top;
+    logic value;
+    `CONNECT_PAIR(value)
+endmodule
+)");
+
+    auto hover = doc.getHoverAt(doc.before("value;").m_offset);
+    REQUIRE(hover);
+    auto content = rfl::get<lsp::MarkupContent>(hover->contents).value;
+    CAPTURE(content);
+    CHECK(content.find(".a(value)") != std::string::npos);
+    CHECK(content.find(".b(value)") != std::string::npos);
+    CHECK(countSubstring(content, "Expanded from") == 2);
+    CHECK(countSubstring(content, "`CONNECT_PAIR(value)") == 2);
+
+    auto driverHeader = content.find("Driven via port");
+    auto expansion = content.find("Expanded from", driverHeader);
+    auto nextSection = content.find("\n\n---\n\n", driverHeader);
+    auto aNode = content.find(".a(value)");
+    auto bNode = content.find(".b(value)");
+    CHECK(driverHeader < expansion);
+    CHECK(expansion < nextSection);
+    bool nodesAreSeparated = (aNode < nextSection && nextSection < bNode) ||
+                             (bNode < nextSection && nextSection < aNode);
+    CHECK(nodesAreSeparated);
+}
+
+TEST_CASE("HoverDocCommentUsesSeparateSection") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(
+module top;
+    /// Value documentation.
+    logic value;
+endmodule
+)");
+
+    auto hover = doc.getHoverAt(doc.before("value;").m_offset);
+    REQUIRE(hover);
+    auto content = rfl::get<lsp::MarkupContent>(hover->contents).value;
+    CAPTURE(content);
+    auto comment = content.find("Value documentation.");
+    auto nextSection = content.find("\n\n---\n\n", comment);
+    auto syntax = content.find("logic value;", comment);
+    CHECK(comment < nextSection);
+    CHECK(nextSection < syntax);
+}
+
+TEST_CASE("HoverDriverDocCommentStaysWithSyntax") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(
+module top;
+    logic value;
+    /// Driver documentation.
+    always_comb value = 1'b0;
+endmodule
+)");
+
+    auto hover = doc.getHoverAt(doc.before("value;").m_offset);
+    REQUIRE(hover);
+    auto content = rfl::get<lsp::MarkupContent>(hover->contents).value;
+    CAPTURE(content);
+    auto driverHeader = content.find("Driven by always_comb");
+    auto comment = content.find("/// Driver documentation.", driverHeader);
+    auto syntax = content.find("always_comb value = 1'b0;", comment);
+    CHECK(driverHeader < comment);
+    CHECK(comment < syntax);
+    CHECK(content.find("\n\n---\n\n", driverHeader) == std::string::npos);
+}
+
 TEST_CASE("HoverCommandLineDefine") {
     ServerHarness server;
     Config config;

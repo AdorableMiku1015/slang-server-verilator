@@ -15,7 +15,6 @@
 #include "lsp/LspTypes.h"
 #include "lsp/SnippetString.h"
 #include "lsp/URI.h"
-#include "util/Converters.h"
 #include "util/Formatting.h"
 #include "util/Logging.h"
 #include "util/SlangExtensions.h"
@@ -38,6 +37,7 @@
 #include "slang/ast/symbols/ValueSymbol.h"
 #include "slang/ast/symbols/VariableSymbols.h"
 #include "slang/ast/types/AllTypes.h"
+#include "slang/ast/types/TypePrinter.h"
 #include "slang/parsing/TokenKind.h"
 #include "slang/syntax/SyntaxKind.h"
 #include "slang/syntax/SyntaxNode.h"
@@ -52,6 +52,37 @@ namespace {
 
 bool hasSourceLocation(const ast::Symbol& symbol) {
     return symbol.location && symbol.location != SourceLocation::NoLocation;
+}
+
+std::string getCompletionTypeString(const ast::Symbol& symbol, const ast::Type& type) {
+    if (type.isError()) {
+        if (auto* value = symbol.as_if<ast::ValueSymbol>()) {
+            if (auto result = getDeclaredTypeString(*value))
+                return std::move(*result);
+        }
+    }
+    return type.toString();
+}
+
+const ast::Type* getResolvedTypeParameter(const ast::Symbol& symbol) {
+    auto* typeSymbol = &symbol;
+    if (auto* modportPort = symbol.as_if<ast::ModportPortSymbol>();
+        modportPort && modportPort->internalSymbol) {
+        typeSymbol = modportPort->internalSymbol;
+    }
+
+    auto* value = typeSymbol->as_if<ast::ValueSymbol>();
+    if (!value)
+        return nullptr;
+    return getTypeParameterTargetType(value->getType());
+}
+
+std::string getTypeDetail(const ast::Type& type) {
+    ast::TypePrinter printer;
+    printer.options.elideScopeNames = true;
+    printer.options.skipTypeDefs = true;
+    printer.append(type);
+    return printer.toString();
 }
 
 class CompletionSymbolFinder
@@ -199,6 +230,40 @@ public:
                                                         followedByCall,
                                                         resolvesCompletionEdits(dispatch)));
         }
+
+        auto* targetType = targetScope->asSymbol().as_if<ast::Type>();
+        if (!targetType || !targetType->isStruct())
+            return;
+
+        std::vector<const ast::Type*> activeTypes{&targetType->getCanonicalType()};
+        auto addNestedFields = [&](auto&& self, const ast::FieldSymbol& parent,
+                                   std::string_view prefix) -> void {
+            auto& fieldType = unwrapErrorType(parent.getType()).getCanonicalType();
+            if (!fieldType.isStruct() ||
+                std::ranges::find(activeTypes, &fieldType) != activeTypes.end()) {
+                return;
+            }
+
+            activeTypes.push_back(&fieldType);
+            for (auto& nestedMember : fieldType.as<ast::Scope>().members()) {
+                auto* nestedField = nestedMember.as_if<ast::FieldSymbol>();
+                if (!nestedField || nestedField->name.empty())
+                    continue;
+
+                auto label = fmt::format("{}.{}", prefix, nestedField->name);
+                results.push_back(getHierarchicalCompletion(parent, *nestedField,
+                                                            doc->getURI().str(), followedByCall,
+                                                            resolvesCompletionEdits(dispatch),
+                                                            label));
+                self(self, *nestedField, label);
+            }
+            activeTypes.pop_back();
+        };
+
+        for (auto& member : targetScope->members()) {
+            if (auto* field = member.as_if<ast::FieldSymbol>(); field && !field->name.empty())
+                addNestedFields(addNestedFields, *field, field->name);
+        }
     }
 
 private:
@@ -344,6 +409,9 @@ std::string getMemberCompletionDetail(const slang::ast::Symbol& symbol) {
             detailStr = "TypeAlias";
         }
     }
+    else if (slang::ast::TypeParameterSymbol::isKind(symbol.kind)) {
+        detailStr = "type";
+    }
     else if (slang::ast::InterfacePortSymbol::isKind(symbol.kind)) {
         auto& port = symbol.as<slang::ast::InterfacePortSymbol>();
         detailStr = port.interfaceDef ? std::string{port.interfaceDef->name} : "interface";
@@ -362,7 +430,9 @@ std::string getMemberCompletionDetail(const slang::ast::Symbol& symbol) {
     }
     else if (slang::ast::PortSymbol::isKind(symbol.kind)) {
         auto& port = symbol.as<slang::ast::PortSymbol>();
-        detailStr = portString(port.direction) + " " + port.getType().toString();
+        auto& typeSymbol = port.internalSymbol ? *port.internalSymbol : symbol;
+        detailStr = portString(port.direction) + " " +
+                    getCompletionTypeString(typeSymbol, port.getType());
     }
     else if (slang::ast::InstanceSymbol::isKind(symbol.kind)) {
         auto& defName = symbol.as<slang::ast::InstanceSymbol>().getDefinition().name;
@@ -372,13 +442,16 @@ std::string getMemberCompletionDetail(const slang::ast::Symbol& symbol) {
         detailStr = getInstanceArrayCompletionDetail(symbol.as<ast::InstanceArraySymbol>());
     }
     else {
+        if (auto* resolvedType = getResolvedTypeParameter(symbol))
+            detailStr = getTypeDetail(*resolvedType);
+
         bool supportsDeclaredTypeDetail = slang::ast::ValueSymbol::isKind(symbol.kind) ||
-                                          slang::ast::ParameterSymbol::isKind(symbol.kind) ||
-                                          slang::ast::TypeParameterSymbol::isKind(symbol.kind);
+                                          slang::ast::ParameterSymbol::isKind(symbol.kind);
         auto declType = symbol.getDeclaredType();
         // For value symbols, unwrap their type to see in the dropdown, and go one layer up for
         // the syntax to include the type
-        if (supportsDeclaredTypeDetail && declType && declType->getTypeSyntax()) {
+        if (detailStr.empty() && supportsDeclaredTypeDetail && declType &&
+            declType->getTypeSyntax()) {
             auto typeSyntax = declType->getTypeSyntax();
             if (typeSyntax) {
                 detailStr = slang::syntax::SyntaxPrinter()
@@ -387,7 +460,7 @@ std::string getMemberCompletionDetail(const slang::ast::Symbol& symbol) {
                                 .str();
             }
         }
-        else if (supportsDeclaredTypeDetail) {
+        else if (detailStr.empty() && supportsDeclaredTypeDetail) {
             detailStr = toString(symbol.kind);
         }
     }
@@ -399,14 +472,20 @@ std::string getMemberCompletionDetail(const slang::ast::Symbol& symbol) {
 
 lsp::CompletionItem MemberCompletionQuery::getHierarchicalCompletion(
     const slang::ast::Symbol& parentSymbol, const slang::ast::Symbol& symbol,
-    std::string_view documentUri, bool labelOnly, bool deferCallableEdit) {
+    std::string_view documentUri, bool labelOnly, bool deferCallableEdit,
+    std::string_view completionLabel) {
 
     if (ast::FieldSymbol::isKind(symbol.kind)) {
-        auto detailStr = symbol.as<ast::FieldSymbol>().getType().toString();
+        auto& field = symbol.as<ast::FieldSymbol>();
+        auto* resolvedType = getResolvedTypeParameter(symbol);
+        auto detailStr = resolvedType ? getTypeDetail(*resolvedType)
+                                      : getCompletionTypeString(field, field.getType());
         auto valSym = parentSymbol.as_if<ast::ValueSymbol>();
         auto descStr = valSym ? valSym->getType().getLexicalPath() : parentSymbol.getLexicalPath();
+        auto label = completionLabel.empty() ? std::string{symbol.name}
+                                             : std::string{completionLabel};
         auto item = lsp::CompletionItem{
-            .label = std::string{symbol.name},
+            .label = label,
             .labelDetails =
                 lsp::CompletionItemLabelDetails{
                     .detail = " " + detailStr,
@@ -414,10 +493,11 @@ lsp::CompletionItem MemberCompletionQuery::getHierarchicalCompletion(
                 },
             .kind = getCompletionKind(symbol),
             .documentation = std::nullopt,
-            .filterText = std::string{symbol.name},
+            .filterText = label,
             .data = rfl::to_generic<rfl::UnderlyingEnums>(CompletionData{
                 .documentUri = std::string(documentUri),
                 .symbolPath = symbol.getHierarchicalPath(),
+                .symbolName = std::string{symbol.name},
                 .bufferId = symbol.location.buffer().getId(),
                 .offset = symbol.location.offset(),
                 .symbolKind = symbol.kind,
@@ -443,7 +523,7 @@ static void setSubroutineCompletionEdit(const slang::ast::SubroutineSymbol& subr
     toInsert.appendText("(");
     auto args = subroutine.getArguments();
     for (auto& arg : args) {
-        auto argType = arg->getDeclaredType()->getType().toString();
+        auto argType = getCompletionTypeString(*arg, arg->getType());
 
         // TODO: We should use textDocument/signatureHelp to show types and default values
         if (arg->getDefaultValue() && arg->getDefaultValue()->syntax) {
@@ -489,6 +569,7 @@ lsp::CompletionItem MemberCompletionQuery::getCompletion(const slang::ast::Symbo
         .data = rfl::to_generic<rfl::UnderlyingEnums>(CompletionData{
             .documentUri = std::string(documentUri),
             .symbolPath = symbol.getHierarchicalPath(),
+            .symbolName = std::string{symbol.name},
             .bufferId = symbol.location.buffer().getId(),
             .offset = symbol.location.offset(),
             .symbolKind = symbol.kind,
@@ -678,7 +759,7 @@ void MemberCompletionQuery::resolve(CompletionDispatch& dispatch, lsp::Completio
     if (data->bufferId) {
         CompletionSymbolFinder finder(
             SourceLocation(BufferID(data->bufferId, "completion item resolve"), data->offset),
-            data->symbolKind, item.label, data->symbolPath);
+            data->symbolKind, data->symbolName, data->symbolPath);
         root.visit(finder);
         symbol = finder.result;
     }

@@ -5,6 +5,7 @@
 #include "utils/InlayHintScanner.h"
 #include "utils/ServerHarness.h"
 #include <algorithm>
+#include <array>
 
 using namespace slang;
 
@@ -154,6 +155,146 @@ endmodule
     const auto& edit = hint->textEdits->front();
     CHECK(edit.range.start.line == 9);
     CHECK_FALSE(edit.newText.starts_with('\n'));
+}
+
+TEST_CASE("InlayHintsAssignmentPatternTypes") {
+    ServerHarness server("");
+    auto hdl = server.openFile("inlay_assignment_patterns.sv", R"(
+package Pkg;
+    typedef logic [missing_width - 1:0] incomplete_t;
+    typedef struct packed {
+        incomplete_t payload;
+        logic valid;
+    } packet_t;
+    typedef struct packed {
+        packet_t packet;
+        logic ready;
+    } wrapper_t;
+endpackage
+
+module top;
+    Pkg::packet_t packet;
+    Pkg::wrapper_t wrapper;
+    wire Pkg::packet_t packet_wire;
+    logic source;
+    Pkg::packet_t initialized = '{payload: source, valid: source};
+    assign packet_wire = '{payload: source, valid: source};
+
+    function automatic void consume(Pkg::packet_t value);
+    endfunction
+
+    initial begin
+        packet = '{payload: source, valid: source};
+        wrapper = '{packet: '{payload: source, valid: source}, ready: source};
+        packet = Pkg::packet_t'{payload: source, valid: source};
+        consume('{payload: source, valid: source});
+    end
+endmodule
+)");
+
+    auto hints = hdl.getAllInlayHints();
+    REQUIRE(hints.size() == 6);
+
+    std::array expectedLabels{"Pkg::packet_t",  "Pkg::packet_t", "Pkg::packet_t",
+                              "Pkg::wrapper_t", "Pkg::packet_t", "Pkg::packet_t"};
+    auto packetType = hdl.before("packet_t;");
+    auto wrapperType = hdl.before("wrapper_t;");
+    std::array expectedTypePositions{packetType.getPosition(), packetType.getPosition(),
+                                     packetType.getPosition(), wrapperType.getPosition(),
+                                     packetType.getPosition(), packetType.getPosition()};
+    for (size_t i = 0; i < hints.size(); i++) {
+        REQUIRE(rfl::holds_alternative<std::vector<lsp::InlayHintLabelPart>>(hints[i].label));
+        const auto& labelParts = rfl::get<std::vector<lsp::InlayHintLabelPart>>(hints[i].label);
+        REQUIRE(labelParts.size() == 1);
+        CHECK(labelParts[0].value == expectedLabels[i]);
+        REQUIRE(labelParts[0].location);
+        CHECK(labelParts[0].location->uri == hdl.doc->getURI());
+        CHECK(labelParts[0].location->range.start == expectedTypePositions[i]);
+        auto expectedEnd = expectedTypePositions[i];
+        expectedEnd.character += i == 3 ? std::string_view("wrapper_t").size()
+                                        : std::string_view("packet_t").size();
+        CHECK(labelParts[0].location->range.end == expectedEnd);
+        CHECK(hints[i].kind == lsp::InlayHintKind::Type);
+        REQUIRE(hints[i].textEdits);
+        REQUIRE(hints[i].textEdits->size() == 1);
+        auto& edit = hints[i].textEdits->front();
+        CHECK(edit.range.start == hints[i].position);
+        CHECK(edit.range.end == hints[i].position);
+        CHECK(edit.newText == expectedLabels[i]);
+    }
+
+    auto typeHover = hdl.getHoverAt(packetType.m_offset);
+    REQUIRE(typeHover);
+    auto hoverContent = rfl::get<lsp::MarkupContent>(typeHover->contents).value;
+    CHECK(hoverContent.find("**TypeAlias** `packet_t`") != std::string::npos);
+
+    auto typeDefinitions = packetType.getDefinitions();
+    REQUIRE(typeDefinitions.size() == 1);
+    CHECK(typeDefinitions[0].targetSelectionRange.start == packetType.getPosition());
+
+    auto initializedPattern = hdl.after("initialized = ").getPosition();
+    auto continuousPattern = hdl.after("packet_wire = ").getPosition();
+    auto assignedPattern = hdl.after("packet = ").getPosition();
+    auto outerPattern = hdl.after("wrapper = ").getPosition();
+    auto nestedPattern = hdl.after("wrapper = '").after("packet: ").getPosition();
+    auto argumentPattern = hdl.after("initial begin").after("consume(").getPosition();
+    CHECK(hints[0].position == initializedPattern);
+    CHECK(hints[1].position == continuousPattern);
+    CHECK(hints[2].position == assignedPattern);
+    CHECK(hints[3].position == outerPattern);
+    CHECK(hints[4].position == nestedPattern);
+    CHECK(hints[5].position == argumentPattern);
+}
+
+TEST_CASE("InlayHintsAndHoverUseResolvedInterfaceType") {
+    ServerHarness server("");
+    auto hdl = server.openFile("inlay_interface_assignment_pattern.sv", R"(
+typedef struct packed {
+    logic [7:0] first;
+    logic [7:0] second;
+} item_t;
+
+interface test_if #(
+    parameter type T = item_t
+);
+    T value;
+endinterface
+
+module top;
+    test_if #(.T(item_t)) a();
+    test_if b();
+
+    initial begin
+        a.value = '{first: '0, second: '0};
+        b.value = '{first: '0, second: '0};
+    end
+endmodule
+)");
+
+    auto hints = hdl.getAllInlayHints();
+    REQUIRE(hints.size() == 2);
+    for (const auto& hint : hints) {
+        REQUIRE(rfl::holds_alternative<std::vector<lsp::InlayHintLabelPart>>(hint.label));
+        const auto& labelParts = rfl::get<std::vector<lsp::InlayHintLabelPart>>(hint.label);
+        REQUIRE(labelParts.size() == 1);
+        CHECK(labelParts[0].value == "item_t");
+        REQUIRE(labelParts[0].location);
+        CHECK(labelParts[0].location->range.start == hdl.before("item_t;").getPosition());
+        REQUIRE(hint.textEdits);
+        REQUIRE(hint.textEdits->size() == 1);
+        CHECK(hint.textEdits->front().newText == "item_t");
+    }
+
+    for (auto cursor : {hdl.after("a."), hdl.after("b.")}) {
+        auto hover = hdl.getHoverAt(cursor.m_offset);
+        REQUIRE(hover);
+        auto content = rfl::get<lsp::MarkupContent>(hover->contents).value;
+        CAPTURE(content);
+        CHECK(content.find("Type: [`PackedStruct T (aka item_t) (logic[15:0])`]") !=
+              std::string::npos);
+        CHECK(content.find("#L5,3") != std::string::npos);
+        CHECK(content.find("#L8,20") == std::string::npos);
+    }
 }
 
 TEST_CASE("InlayHintsParameters") {

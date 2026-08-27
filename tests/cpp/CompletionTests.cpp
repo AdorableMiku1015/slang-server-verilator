@@ -958,6 +958,83 @@ TEST_CASE("HierarchicalInterfacePortCompletion") {
     CHECK(!hasCompletion(producerCompletions, "hidden"));
 }
 
+TEST_CASE("HierarchicalInterfaceInstanceCompletionUsesResolvedParameterType") {
+    ServerHarness server("repo1");
+
+    auto doc = server.openFile("parameterized_iface_completion.sv", R"(
+    typedef logic [3:0] nibble_t;
+
+    interface stream_if #(
+        parameter type element_t = logic
+    );
+        element_t data;
+    endinterface
+
+    module parameterized_iface_completion;
+        stream_if #(.element_t(logic [7:0])) stream();
+        stream_if #(.element_t(nibble_t)) narrow_stream();
+
+        initial begin
+            stream.data;
+            narrow_stream.data;
+        end
+    endmodule
+    )");
+
+    auto completions = doc.after("stream.").getCompletions(".");
+    auto data = std::ranges::find(completions, "data",
+                                  [](const CompletionHandle& item) { return item.m_item.label; });
+    REQUIRE(data != completions.end());
+    REQUIRE(data->m_item.labelDetails);
+    CHECK(data->m_item.labelDetails->detail == " logic[7:0]");
+    auto typeParameter = std::ranges::find(
+        completions, "element_t", [](const CompletionHandle& item) { return item.m_item.label; });
+    REQUIRE(typeParameter != completions.end());
+    REQUIRE(typeParameter->m_item.labelDetails);
+    CHECK(typeParameter->m_item.labelDetails->detail == " type");
+
+    auto narrowCompletions = doc.after("narrow_stream.").getCompletions(".");
+    auto narrowData = std::ranges::find(
+        narrowCompletions, "data", [](const CompletionHandle& item) { return item.m_item.label; });
+    REQUIRE(narrowData != narrowCompletions.end());
+    REQUIRE(narrowData->m_item.labelDetails);
+    CHECK(narrowData->m_item.labelDetails->detail == " nibble_t");
+}
+
+TEST_CASE("HierarchicalInterfacePortCompletionUsesPinnedParameterType") {
+    ServerHarness server("repo1");
+
+    auto doc = server.openFile("pinned_parameter_iface_completion.sv", R"(
+    package types_pkg;
+        typedef logic [15:0] event_t;
+    endpackage
+
+    interface event_if #(
+        parameter type data_type = logic
+    );
+        data_type data;
+        modport source(output data);
+    endinterface
+
+    module pinned_parameter_iface_completion (
+        event_if.source channel
+    );
+        $static_assert(type(channel.data_type) == type(types_pkg::event_t));
+
+        initial begin
+            channel.; // completion target
+        end
+    endmodule
+    )");
+
+    auto completions = doc.before("; // completion target").getCompletions(".");
+    auto data = std::ranges::find(completions, "data",
+                                  [](const CompletionHandle& item) { return item.m_item.label; });
+    REQUIRE(data != completions.end());
+    REQUIRE(data->m_item.labelDetails);
+    CHECK(data->m_item.labelDetails->detail == " event_t");
+}
+
 TEST_CASE("HierarchicalInterfacePortArrayCompletionWithUnresolvedBounds") {
     ServerHarness server("repo1");
 
@@ -1059,6 +1136,10 @@ TEST_CASE("HierarchicalStructCompletionWithUnresolvedWidth") {
 
     auto rootMembers = doc.after("partial_value.").getCompletions(".");
     CHECK(findCompletion(rootMembers, "middle") != rootMembers.end());
+    CHECK(findCompletion(rootMembers, "middle.leaf") != rootMembers.end());
+    CHECK(findCompletion(rootMembers, "middle.leaf.known") != rootMembers.end());
+    CHECK(findCompletion(rootMembers, "middle.leaf.variable_width") != rootMembers.end());
+    CHECK(findCompletion(rootMembers, "middle.middle_known") != rootMembers.end());
     CHECK(findCompletion(rootMembers, "root_known") != rootMembers.end());
 
     auto middleMembers = doc.after("partial_value.middle.").getCompletions(".");
@@ -1077,9 +1158,8 @@ TEST_CASE("HierarchicalStructCompletionWithUnresolvedWidth") {
     REQUIRE(middleHover);
     auto middleContent = rfl::get<lsp::MarkupContent>(middleHover->contents).value;
     CHECK(middleContent.find("**Field** `middle`") != std::string::npos);
-    CHECK(middleContent.find("Type:") != std::string::npos);
+    CHECK(middleContent.find("Declared Type:") != std::string::npos);
     CHECK(middleContent.find("middle_t") != std::string::npos);
-    CHECK(middleContent.find("PackedStruct") != std::string::npos);
     CHECK(middleContent.find("Incomplete subtypes:") == std::string::npos);
     CHECK(middleContent.find("Incomplete type") == std::string::npos);
 
@@ -1088,7 +1168,7 @@ TEST_CASE("HierarchicalStructCompletionWithUnresolvedWidth") {
     REQUIRE(rootTypeHover);
     auto rootTypeContent = rfl::get<lsp::MarkupContent>(rootTypeHover->contents).value;
     CHECK(rootTypeContent.find("**TypeAlias** `root_t`") != std::string::npos);
-    CHECK(rootTypeContent.find("Resolved Type: PackedStruct `root_t`") != std::string::npos);
+    CHECK(rootTypeContent.find("Declared Type: [`PackedStruct root_t`]") != std::string::npos);
     CHECK(rootTypeContent.find("Incomplete subtypes: [`variable_width_t`](<file:") !=
           std::string::npos);
     CHECK(rootTypeContent.find("unused_mod.sv#L72,45") != std::string::npos);
@@ -1107,6 +1187,376 @@ TEST_CASE("HierarchicalStructCompletionWithUnresolvedWidth") {
     auto knownContent = rfl::get<lsp::MarkupContent>(knownHover->contents).value;
     CHECK(knownContent.find("**Field** `known`") != std::string::npos);
     CHECK(knownContent.find("Type: `logic`") != std::string::npos);
+}
+
+TEST_CASE("AssignmentPatternStructFieldsWithUnresolvedWidth") {
+    ServerHarness server("repo1");
+    auto doc = server.openFile("assignment_pattern_fields.sv", R"(
+    typedef logic [missing_width - 1:0] incomplete_t;
+
+    typedef struct packed {
+        incomplete_t payload;
+        logic valid;
+    } packet_t;
+
+    typedef struct packed {
+        packet_t packet;
+        logic ready;
+    } wrapper_t;
+
+    module assignment_patterns;
+        packet_t packet;
+        wrapper_t wrapper;
+        wire packet_t packet_wire;
+        logic source;
+        logic payload;
+        logic valid;
+
+        function automatic void consume(packet_t value);
+        endfunction
+
+        assign packet_wire = '{
+        };
+
+        initial begin
+            packet = '{payload: source, valid: source};
+            packet = '{payload, valid};
+            packet = {source, source};
+            packet = '{ };
+            packet = '{pay: source, valid: source};
+            packet = '{payload: source, };
+            packet = '{default: source, };
+            wrapper = '{packet: '{payload: source, valid: source}, ready: source};
+            consume('{});
+        end
+    endmodule
+    )");
+
+    auto findCompletion = [](auto& items, std::string_view label) {
+        return std::ranges::find(items, label,
+                                 [](const CompletionHandle& item) { return item.m_item.label; });
+    };
+    constexpr std::string_view allFieldsLabel = "'{payload, valid}";
+
+    auto& triggerCharacters = completions::completionTriggerCharacters();
+    CHECK(std::ranges::find(triggerCharacters, "{") != triggerCharacters.end());
+
+    auto emptyPattern = doc.before("packet = '{ }").after("'{").getCompletions("{");
+    REQUIRE(emptyPattern.size() == 1);
+    auto triggeredAllFields = findCompletion(emptyPattern, allFieldsLabel);
+    REQUIRE(triggeredAllFields != emptyPattern.end());
+    CHECK(triggeredAllFields->m_item.insertText == "\n\tpayload: $1,\n\tvalid: $2\n");
+    CHECK(!triggeredAllFields->m_item.additionalTextEdits);
+
+    auto ordinaryBrace = doc.after("packet = {").getCompletions("{");
+    CHECK(ordinaryBrace.empty());
+
+    auto invokedPattern = doc.after("assign packet_wire = '{\n        ").getCompletions();
+    REQUIRE(invokedPattern.size() == 3);
+    CHECK(findCompletion(invokedPattern, allFieldsLabel) == invokedPattern.end());
+    auto invokedPayload = findCompletion(invokedPattern, "payload");
+    REQUIRE(invokedPayload != invokedPattern.end());
+    CHECK(invokedPayload->m_item.insertText == "payload: $1");
+    CHECK(findCompletion(invokedPattern, "valid") != invokedPattern.end());
+    CHECK(findCompletion(invokedPattern, "default") != invokedPattern.end());
+
+    auto unfinished = server.openFile("unfinished_assignment_pattern.sv", R"(
+    typedef struct packed {
+        logic [7:0] payload;
+        logic valid;
+    } packet_t;
+    module unfinished_assignment_pattern;
+        wire packet_t packet_wire;
+        assign packet_wire = '{)");
+    auto unfinishedCompletions = unfinished.end().getCompletions("{");
+    REQUIRE(unfinishedCompletions.size() == 1);
+    auto allFields = findCompletion(unfinishedCompletions, allFieldsLabel);
+    REQUIRE(allFields != unfinishedCompletions.end());
+    CHECK(allFields->m_item.insertText == "\n\tpayload: $1,\n\tvalid: $2\n\\};");
+    CHECK(!allFields->m_item.additionalTextEdits);
+
+    auto initializer = server.openFile("unfinished_assignment_pattern_initializer.sv", R"(
+    typedef struct packed {
+        logic [7:0] payload;
+        logic valid;
+    } packet_t;
+    module unfinished_assignment_pattern_initializer;
+        packet_t initialized = '{)");
+    auto initializerCompletions = initializer.end().getCompletions("{");
+    REQUIRE(initializerCompletions.size() == 1);
+    allFields = findCompletion(initializerCompletions, allFieldsLabel);
+    REQUIRE(allFields != initializerCompletions.end());
+    CHECK(allFields->m_item.insertText == "\n\tpayload: $1,\n\tvalid: $2\n\\};");
+
+    auto paired = server.openFile("paired_assignment_pattern.sv", R"(
+    typedef struct packed {
+        logic [7:0] payload;
+        logic valid;
+    } packet_t;
+    module paired_assignment_pattern;
+        wire packet_t packet_wire;
+        assign packet_wire = '{}
+    endmodule
+    )");
+    auto pairedCompletions = paired.after("assign packet_wire = '{").getCompletions("{");
+    REQUIRE(pairedCompletions.size() == 1);
+    allFields = findCompletion(pairedCompletions, allFieldsLabel);
+    REQUIRE(allFields != pairedCompletions.end());
+    CHECK(allFields->m_item.insertText == "\n\tpayload: $1,\n\tvalid: $2\n");
+    REQUIRE(allFields->m_item.additionalTextEdits);
+    REQUIRE(allFields->m_item.additionalTextEdits->size() == 1);
+    CHECK(allFields->m_item.additionalTextEdits->front().newText == ";");
+
+    auto alwaysComb = server.openFile("always_comb_assignment_pattern.sv", R"(
+    typedef struct packed {
+        logic [7:0] payload;
+        logic valid;
+    } packet_t;
+    module always_comb_assignment_pattern;
+        packet_t packet;
+        always_comb packet = '{}
+    endmodule
+    )");
+    auto alwaysCombCompletions = alwaysComb.after("always_comb packet = '{").getCompletions("{");
+    REQUIRE(alwaysCombCompletions.size() == 1);
+    allFields = findCompletion(alwaysCombCompletions, allFieldsLabel);
+    REQUIRE(allFields != alwaysCombCompletions.end());
+    CHECK(allFields->m_item.insertText == "\n\tpayload: $1,\n\tvalid: $2\n");
+    CHECK(allFields->m_item.insertTextMode == lsp::InsertTextMode::adjustIndentation);
+    REQUIRE(allFields->m_item.additionalTextEdits);
+
+    auto nestedPatternDoc = server.openFile("nested_assignment_pattern.sv", R"(
+    typedef struct packed {
+        logic [7:0] payload;
+        logic valid;
+    } packet_t;
+    typedef struct packed {
+        packet_t packet;
+        logic ready;
+    } wrapper_t;
+    module nested_unfinished_assignment_pattern;
+        wrapper_t wrapper;
+        initial begin
+            wrapper = '{ready: 1'b0, packet: '{}};
+        end
+    endmodule
+    )");
+    auto nestedPatternCompletions = nestedPatternDoc.after("packet: '{").getCompletions("{");
+    REQUIRE(nestedPatternCompletions.size() == 1);
+    allFields = findCompletion(nestedPatternCompletions, allFieldsLabel);
+    REQUIRE(allFields != nestedPatternCompletions.end());
+    CHECK(allFields->m_item.insertText == "\n\tpayload: $1,\n\tvalid: $2\n");
+    CHECK(!allFields->m_item.additionalTextEdits);
+
+    auto nestedUnfinished = server.openFile("nested_unfinished_assignment_pattern.sv", R"(
+    typedef struct packed {
+        logic [7:0] payload;
+        logic valid;
+    } packet_t;
+    typedef struct packed {
+        packet_t packet;
+        logic ready;
+    } wrapper_t;
+    module nested_unfinished_assignment_pattern;
+        wrapper_t wrapper;
+        initial begin
+            wrapper = '{packet: '{)");
+    auto nestedUnfinishedCompletions = nestedUnfinished.end().getCompletions("{");
+    REQUIRE(nestedUnfinishedCompletions.size() == 1);
+    allFields = findCompletion(nestedUnfinishedCompletions, allFieldsLabel);
+    REQUIRE(allFields != nestedUnfinishedCompletions.end());
+    CHECK(allFields->m_item.insertText == "\n\tpayload: $1,\n\tvalid: $2\n\\},");
+    CHECK(!allFields->m_item.additionalTextEdits);
+
+    auto nestedPairedUnfinished = server.openFile("nested_paired_unfinished_assignment_pattern.sv",
+                                                  R"(
+    typedef struct packed {
+        logic [7:0] payload;
+        logic valid;
+    } packet_t;
+    typedef struct packed {
+        packet_t packet;
+        logic ready;
+    } wrapper_t;
+    module nested_paired_unfinished_assignment_pattern;
+        wrapper_t wrapper;
+        initial begin
+            wrapper = '{packet: '{})");
+    auto nestedPairedUnfinishedCompletions =
+        nestedPairedUnfinished.after("wrapper = '{packet: '{").getCompletions("{");
+    REQUIRE(nestedPairedUnfinishedCompletions.size() == 1);
+    allFields = findCompletion(nestedPairedUnfinishedCompletions, allFieldsLabel);
+    REQUIRE(allFields != nestedPairedUnfinishedCompletions.end());
+    CHECK(allFields->m_item.insertText == "\n\tpayload: $1,\n\tvalid: $2\n");
+    REQUIRE(allFields->m_item.additionalTextEdits);
+    REQUIRE(allFields->m_item.additionalTextEdits->size() == 1);
+    CHECK(allFields->m_item.additionalTextEdits->front().newText == ",");
+
+    auto nestedWithComma = server.openFile("nested_assignment_pattern_with_comma.sv", R"(
+    typedef struct packed {
+        logic [7:0] payload;
+        logic valid;
+    } packet_t;
+    typedef struct packed {
+        packet_t packet;
+        logic ready;
+    } wrapper_t;
+    module nested_assignment_pattern_with_comma;
+        wrapper_t wrapper;
+        initial begin
+            wrapper = '{packet: '{}, ready: 1'b0};
+        end
+    endmodule
+    )");
+    auto nestedWithCommaCompletions =
+        nestedWithComma.after("wrapper = '{packet: '{").getCompletions("{");
+    REQUIRE(nestedWithCommaCompletions.size() == 1);
+    allFields = findCompletion(nestedWithCommaCompletions, allFieldsLabel);
+    REQUIRE(allFields != nestedWithCommaCompletions.end());
+    CHECK(!allFields->m_item.additionalTextEdits);
+
+    auto callPatternCompletions = doc.after("consume('{").getCompletions("{");
+    REQUIRE(callPatternCompletions.size() == 1);
+    allFields = findCompletion(callPatternCompletions, allFieldsLabel);
+    REQUIRE(allFields != callPatternCompletions.end());
+    CHECK(allFields->m_item.insertText == "\n\tpayload: $1,\n\tvalid: $2\n");
+    CHECK(!allFields->m_item.additionalTextEdits);
+
+    auto partialPattern = doc.after("packet = '{ }").after("packet = '{pay").getCompletions();
+    auto payload = findCompletion(partialPattern, "payload");
+    REQUIRE(payload != partialPattern.end());
+    CHECK(findCompletion(partialPattern, "valid") == partialPattern.end());
+    auto defaultKey = findCompletion(partialPattern, "default");
+    REQUIRE(defaultKey != partialPattern.end());
+    CHECK(defaultKey->m_item.kind == lsp::CompletionItemKind::Keyword);
+    CHECK(!defaultKey->m_item.insertText);
+    CHECK(!payload->m_item.insertText);
+    CHECK(getCompletionTextEdit(payload->m_item).newText == "payload");
+
+    auto nextKey = doc.after("packet = '{pay: source, valid: source};")
+                       .after("packet = '{payload: source, ")
+                       .getCompletions();
+    REQUIRE(nextKey.size() == 2);
+    auto valid = findCompletion(nextKey, "valid");
+    REQUIRE(valid != nextKey.end());
+    CHECK(findCompletion(nextKey, "payload") == nextKey.end());
+    defaultKey = findCompletion(nextKey, "default");
+    REQUIRE(defaultKey != nextKey.end());
+    CHECK(defaultKey->m_item.insertText == "default: $1");
+    CHECK(valid->m_item.insertText == "valid: $1");
+
+    auto afterDefault = doc.after("packet = '{default: source, ").getCompletions();
+    CHECK(findCompletion(afterDefault, "default") == afterDefault.end());
+    CHECK(findCompletion(afterDefault, "payload") != afterDefault.end());
+    CHECK(findCompletion(afterDefault, "valid") != afterDefault.end());
+
+    auto nestedPattern = doc.after("wrapper = '{packet: '{").getCompletions();
+    CHECK(findCompletion(nestedPattern, "payload") != nestedPattern.end());
+    CHECK(findCompletion(nestedPattern, "valid") == nestedPattern.end());
+    CHECK(findCompletion(nestedPattern, "ready") == nestedPattern.end());
+
+    auto positionalPayload = doc.before("payload, valid};");
+    auto positionalHover = doc.getHoverAt(positionalPayload.m_offset);
+    REQUIRE(positionalHover);
+    auto positionalContent = rfl::get<lsp::MarkupContent>(positionalHover->contents).value;
+    CHECK(positionalContent.find("**Variable** `payload`") != std::string::npos);
+
+    auto positionalDefinitions = positionalPayload.getDefinitions();
+    REQUIRE(positionalDefinitions.size() == 1);
+    auto localPayload = doc.after("module assignment_patterns;").before("payload;");
+    CHECK(positionalDefinitions[0].targetSelectionRange.start == localPayload.getPosition());
+
+    auto payloadKey = doc.before("payload: source");
+    auto hover = doc.getHoverAt(payloadKey.m_offset);
+    REQUIRE(hover);
+    auto hoverContent = rfl::get<lsp::MarkupContent>(hover->contents).value;
+    CHECK(hoverContent.find("**Field** `payload`") != std::string::npos);
+    CHECK(hoverContent.find("incomplete_t") != std::string::npos);
+
+    auto definitions = payloadKey.getDefinitions();
+    REQUIRE(definitions.size() == 1);
+    auto declaration = doc.before("payload;").getPosition();
+    CHECK(definitions[0].targetSelectionRange.start.line == declaration.line);
+    CHECK(definitions[0].targetSelectionRange.start.character == declaration.character);
+}
+
+TEST_CASE("StructAssignmentCompletionForUnpackedArrayElement") {
+    ServerHarness server("repo1");
+    auto doc = server.openFile("unpacked_array_struct_assignment.sv", R"(
+    typedef struct packed {
+        logic value;
+        logic valid;
+    } entry_t;
+
+    module unpacked_array_struct_assignment;
+        entry_t entries [2];
+        initial entries = '{0: '{}};
+    endmodule
+    )");
+
+    auto completions = doc.after("entries = '{0: '{").getCompletions("{");
+    REQUIRE(completions.size() == 1);
+    CHECK(completions.front().m_item.label == "'{value, valid}");
+    CHECK(completions.front().m_item.insertText == "\n\tvalue: $1,\n\tvalid: $2\n");
+}
+
+TEST_CASE("IncompleteTypeCompletionAndHoverUseDeclaredSyntax") {
+    ServerHarness server;
+    auto doc = server.openFile("incomplete_type.sv", R"(
+    module top;
+        typedef struct packed {
+            logic [UNKNOWN_FIELD_WIDTH-1:0] field [UNKNOWN_FIELD_DEPTH-1:0];
+        } incomplete_t;
+
+        incomplete_t value;
+        logic [UNKNOWN_VALUE_WIDTH-1:0] direct [UNKNOWN_VALUE_DEPTH-1:0];
+
+        function void consume(
+            input logic [UNKNOWN_ARG_WIDTH-1:0] arg [UNKNOWN_ARG_DEPTH-1:0]
+        );
+        endfunction
+
+        initial begin
+            value.;
+            value.field; // field use
+            consume;
+            direct; // direct use
+        end
+    endmodule
+    )");
+
+    auto findByLabel = [](auto& items, std::string_view label) {
+        return std::ranges::find(items, label,
+                                 [](const CompletionHandle& item) { return item.m_item.label; });
+    };
+
+    auto fieldItems = doc.after("value.").getCompletions(".");
+    auto field = findByLabel(fieldItems, "field");
+    REQUIRE(field != fieldItems.end());
+    REQUIRE(field->m_item.labelDetails);
+    CHECK(field->m_item.labelDetails->detail ==
+          " logic [UNKNOWN_FIELD_WIDTH-1:0] [UNKNOWN_FIELD_DEPTH-1:0]");
+
+    auto callableItems = doc.before("consume;").getCompletions();
+    auto callable = findByLabel(callableItems, "consume");
+    REQUIRE(callable != callableItems.end());
+    REQUIRE(callable->m_item.insertText);
+    CHECK(*callable->m_item.insertText ==
+          "consume(${1:arg /* logic [UNKNOWN_ARG_WIDTH-1:0] [UNKNOWN_ARG_DEPTH-1:0] */})");
+
+    auto fieldHover = doc.getHoverAt(doc.before("field; // field use").m_offset);
+    REQUIRE(fieldHover);
+    auto fieldContent = rfl::get<lsp::MarkupContent>(fieldHover->contents).value;
+    CHECK(fieldContent.find("Declared Type: `logic [UNKNOWN_FIELD_WIDTH-1:0] "
+                            "[UNKNOWN_FIELD_DEPTH-1:0]`") != std::string::npos);
+    CHECK(fieldContent.find("Incomplete type") == std::string::npos);
+
+    auto directHover = doc.getHoverAt(doc.before("direct; // direct use").m_offset);
+    REQUIRE(directHover);
+    auto directContent = rfl::get<lsp::MarkupContent>(directHover->contents).value;
+    CHECK(directContent.find("Declared Type: `logic [UNKNOWN_VALUE_WIDTH-1:0] "
+                             "[UNKNOWN_VALUE_DEPTH-1:0]`") != std::string::npos);
+    CHECK(directContent.find("Incomplete type") == std::string::npos);
 }
 
 TEST_CASE("HierarchicalStructCompletion") {
@@ -1165,6 +1615,50 @@ TEST_CASE("HierarchicalStructCompletion") {
     testCompletion("complex_struct.inner.");
     testCompletion("very_complex_struct.level1.");
     testCompletion("very_complex_struct.level1.inner.");
+}
+
+TEST_CASE("HierarchicalStructCompletionDoesNotFlattenUnions") {
+    ServerHarness server("repo1");
+
+    auto doc = server.openFile("struct_union_completion.sv", R"(
+    typedef struct {
+        logic leaf;
+    } inner_t;
+
+    typedef union {
+        inner_t inner;
+        logic raw;
+    } choice_t;
+
+    typedef struct {
+        inner_t nested;
+        choice_t choice;
+    } outer_t;
+
+    module struct_union_completion;
+        outer_t value;
+        choice_t choice;
+
+        initial begin
+            value.;
+            choice.;
+        end
+    endmodule
+    )");
+
+    auto hasLabel = [](const auto& items, std::string_view label) {
+        return std::ranges::any_of(items, [&](const CompletionHandle& item) {
+            return item.m_item.label == label;
+        });
+    };
+
+    auto structCompletions = doc.after("value.").getCompletions(".");
+    CHECK(hasLabel(structCompletions, "nested.leaf"));
+    CHECK_FALSE(hasLabel(structCompletions, "choice.inner"));
+
+    auto unionCompletions = doc.after("choice.").getCompletions(".");
+    CHECK(hasLabel(unionCompletions, "inner"));
+    CHECK_FALSE(hasLabel(unionCompletions, "inner.leaf"));
 }
 
 TEST_CASE("ArrayOfStructsCompletion") {
