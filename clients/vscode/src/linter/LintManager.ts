@@ -23,7 +23,7 @@ export class LintManager extends ExtensionComponent {
     context.subscriptions.push(
       vscode.window.onDidChangeActiveTextEditor((editor) => {
         if (editor) {
-          this.lint(editor.document)
+          void this.lint(editor.document)
         }
       })
     )
