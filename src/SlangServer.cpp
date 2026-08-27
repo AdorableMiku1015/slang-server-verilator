@@ -230,23 +230,27 @@ void SlangServer::onInitialized(const lsp::InitializedParams&) {
     m_client.setConfig(m_config);
 
     if (m_workspaceFolder) {
+        constexpr auto watchAllKinds = static_cast<lsp::WatchKind>(
+            static_cast<uint8_t>(lsp::WatchKind::Create) |
+            static_cast<uint8_t>(lsp::WatchKind::Change) |
+            static_cast<uint8_t>(lsp::WatchKind::Delete));
         auto options = lsp::DidChangeWatchedFilesRegistrationOptions{
             .watchers{
                 // SystemVerilog/Verilog source files
                 lsp::FileSystemWatcher{.globPattern =
                                            lsp::RelativePattern{.baseUri = m_workspaceFolder->uri,
                                                                 .pattern = "**/*.{sv,svh,v,vh}"},
-                                       .kind = lsp::WatchKind::Change},
+                                       .kind = watchAllKinds},
                 // Config files
                 lsp::FileSystemWatcher{.globPattern =
                                            lsp::RelativePattern{.baseUri = m_workspaceFolder->uri,
                                                                 .pattern = ".slang/**/*.json"},
-                                       .kind = lsp::WatchKind::Change},
+                                       .kind = watchAllKinds},
                 // Build/flag files
                 lsp::FileSystemWatcher{.globPattern =
                                            lsp::RelativePattern{.baseUri = m_workspaceFolder->uri,
                                                                 .pattern = "**/*.f"},
-                                       .kind = lsp::WatchKind::Change},
+                                       .kind = watchAllKinds},
             },
         };
 
