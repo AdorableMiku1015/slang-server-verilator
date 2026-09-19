@@ -13,6 +13,7 @@
 #include "ast/WcpClient.h"
 #include "completions/CompletionContext.h"
 #include "completions/CompletionDispatch.h"
+#include "document/SemanticTokens.h"
 #include "lsp/LspTypeExtensions.h"
 #include "lsp/LspTypes.h"
 #include "lsp/URI.h"
@@ -73,6 +74,8 @@ lsp::InitializeResult SlangServer::getInitialize(const lsp::InitializeParams& pa
     registerDocCompletion();
     registerCompletionItemResolve();
     registerDocDocumentHighlight();
+    registerDocSemanticTokensFull();
+    registerDocSemanticTokensRange();
 
     registerDocCodeLens();
     registerDocInlayHint();
@@ -235,6 +238,14 @@ lsp::InitializeResult SlangServer::getInitialize(const lsp::InitializeParams& pa
         }
     }
 
+    auto toStrings = [](std::span<const std::string_view> names) {
+        std::vector<std::string> result;
+        result.reserve(names.size());
+        for (auto name : names)
+            result.emplace_back(name);
+        return result;
+    };
+
     auto result = lsp::InitializeResult{
         .capabilities =
             lsp::ServerCapabilities{
@@ -277,6 +288,16 @@ lsp::InitializeResult SlangServer::getInitialize(const lsp::InitializeParams& pa
                         .commands = getCommandList(),
                     },
                 .callHierarchyProvider = true,
+                .semanticTokensProvider =
+                    lsp::SemanticTokensOptions{
+                        .legend =
+                            lsp::SemanticTokensLegend{
+                                .tokenTypes = toStrings(semanticTokenTypeNames()),
+                                .tokenModifiers = toStrings(semanticTokenModifierNames()),
+                            },
+                        .range = true,
+                        .full = true,
+                    },
                 .inlayHintProvider =
                     lsp::InlayHintOptions{
                         .resolveProvider = false,
@@ -889,6 +910,16 @@ SlangServer::getDocDocumentSymbol(const lsp::DocumentSymbolParams& params) {
 std::optional<std::vector<lsp::DocumentHighlight>> SlangServer::getDocDocumentHighlight(
     const lsp::DocumentHighlightParams& params) {
     return m_driver->getDocDocumentHighlight(params.textDocument.uri, params.position);
+}
+
+std::optional<lsp::SemanticTokens> SlangServer::getDocSemanticTokensFull(
+    const lsp::SemanticTokensParams& params, lsp::RequestContext ctx) {
+    return m_driver->getDocSemanticTokens(params.textDocument.uri, std::nullopt, ctx);
+}
+
+std::optional<lsp::SemanticTokens> SlangServer::getDocSemanticTokensRange(
+    const lsp::SemanticTokensRangeParams& params, lsp::RequestContext ctx) {
+    return m_driver->getDocSemanticTokens(params.textDocument.uri, params.range, ctx);
 }
 
 std::monostate SlangServer::onShutdown(const std::nullopt_t&) {

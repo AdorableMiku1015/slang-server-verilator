@@ -1,0 +1,32 @@
+[
+  {
+    "tokenTypes": [
+      "namespace",
+      "class",
+      "interface",
+      "enum",
+      "enumMember",
+      "struct",
+      "type",
+      "typeParameter",
+      "parameter",
+      "variable",
+      "property",
+      "function",
+      "macro",
+      "label",
+      "net",
+      "port",
+      "instance",
+      "modport"
+    ]
+  },
+  {
+    "tokenModifiers": [
+      "declaration",
+      "definition",
+      "readonly",
+      "defaultLibrary"
+    ]
+  }
+]

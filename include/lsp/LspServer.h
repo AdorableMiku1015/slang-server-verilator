@@ -380,7 +380,7 @@ protected:
     };
     /// @since 3.16.0
     virtual std::optional<SemanticTokens> getDocSemanticTokensRange(
-        const SemanticTokensRangeParams&) {
+        const SemanticTokensRangeParams&, RequestContext = {}) {
         return std::optional<SemanticTokens>{};
     }
 
@@ -402,7 +402,8 @@ protected:
             &Impl::getDocSemanticTokensFullDelta>("textDocument/semanticTokens/full/delta");
     };
     /// @since 3.16.0
-    virtual std::optional<SemanticTokens> getDocSemanticTokensFull(const SemanticTokensParams&) {
+    virtual std::optional<SemanticTokens> getDocSemanticTokensFull(const SemanticTokensParams&,
+                                                                   RequestContext = {}) {
         return std::optional<SemanticTokens>{};
     }
 

@@ -131,6 +131,14 @@ public:
     std::optional<std::vector<lsp::DocumentHighlight>> getDocDocumentHighlight(
         const URI& uri, const lsp::Position& position);
 
+    /// @brief Gets the semantic tokens of a document, encoded for LSP
+    /// @param uri The URI of the document
+    /// @param range When set, only tokens starting inside it are returned
+    /// @return Optional tokens, or nullopt if the document isn't open
+    std::optional<lsp::SemanticTokens> getDocSemanticTokens(const URI& uri,
+                                                            const std::optional<lsp::Range>& range,
+                                                            const lsp::RequestContext& ctx = {});
+
     /// @brief Gets all references to a symbol in a document
     /// @param uri The URI of the document
     /// @param position The LSP position to query

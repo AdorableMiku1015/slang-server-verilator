@@ -991,6 +991,13 @@ std::vector<lsp::InlayHint> ShallowAnalysis::getInlayHints(lsp::Range range,
     return collector.result;
 }
 
+const std::vector<SemanticToken>& ShallowAnalysis::getSemanticTokens(
+    const lsp::RequestContext& ctx) {
+    if (!m_semanticTokens)
+        m_semanticTokens = collectSemanticTokens(*this, ctx);
+    return *m_semanticTokens;
+}
+
 void ShallowAnalysis::addLocalReferences(std::vector<lsp::Location>& references,
                                          SourceLocation targetLocation,
                                          std::string_view targetName) const {

@@ -523,6 +523,18 @@ std::vector<lsp::InlayHint> DocumentHandle::getAllInlayHints() {
     return doc->getAnalysis()->getInlayHints(fullRange, config);
 }
 
+std::vector<lsp::uint> DocumentHandle::getSemanticTokens() {
+    auto tokens = m_server.getDocSemanticTokensFull(
+        lsp::SemanticTokensParams{.textDocument = lsp::TextDocumentIdentifier{.uri = m_uri}});
+    return tokens ? tokens->data : std::vector<lsp::uint>{};
+}
+
+std::vector<lsp::uint> DocumentHandle::getSemanticTokens(lsp::Range range) {
+    auto tokens = m_server.getDocSemanticTokensRange(lsp::SemanticTokensRangeParams{
+        .textDocument = lsp::TextDocumentIdentifier{.uri = m_uri}, .range = range});
+    return tokens ? tokens->data : std::vector<lsp::uint>{};
+}
+
 std::string DocumentHandle::withTextEdits(std::vector<lsp::TextEdit> edits) {
     // Compute line offsets upfront
     std::vector<lsp::uint> lineOffsets;

@@ -36,6 +36,8 @@ export interface Config {
   hovers?: Config__HoverConfig
   /** Inline hints for things like ordered arguments, wildcard ports, and others */
   inlayHints?: Config__InlayHints
+  /** Semantic token highlighting settings */
+  semanticTokens?: Config__SemanticTokens
   /** Builds for direct .f selection or command-based .f generation */
   builds?: Config__Build[]
 }
@@ -76,4 +78,9 @@ export interface Config__InlayHints {
   funcArgNames?: number
   /** Macro argument hints: 0=off, N=only calls with >=N args */
   macroArgNames?: number
+}
+
+export interface Config__SemanticTokens {
+  /** Whether to provide semantic tokens for identifier highlighting */
+  enabled?: boolean
 }

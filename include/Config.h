@@ -119,6 +119,14 @@ struct Config {
                      InlayHints>
         inlayHints = InlayHints{};
 
+    struct SemanticTokens {
+        rfl::Description<"Whether to provide semantic tokens for identifier highlighting", bool>
+            enabled = true;
+    };
+
+    rfl::Description<"Semantic token highlighting settings", SemanticTokens> semanticTokens =
+        SemanticTokens{};
+
     struct Build {
         rfl::Description<"Optional name used for generated build files and UI labels",
                          std::optional<std::string>>

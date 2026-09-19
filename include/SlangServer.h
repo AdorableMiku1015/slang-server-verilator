@@ -242,6 +242,14 @@ public:
     std::optional<std::vector<lsp::DocumentHighlight>> getDocDocumentHighlight(
         const lsp::DocumentHighlightParams&) override;
 
+    /// Semantic tokens for the whole document (syntax highlighting)
+    std::optional<lsp::SemanticTokens> getDocSemanticTokensFull(
+        const lsp::SemanticTokensParams&, lsp::RequestContext ctx = {}) override;
+
+    /// Semantic tokens for a range of the document
+    std::optional<lsp::SemanticTokens> getDocSemanticTokensRange(
+        const lsp::SemanticTokensRangeParams&, lsp::RequestContext ctx = {}) override;
+
     ////////////////////////////////////////////////
     /// Cone tracing
     ////////////////////////////////////////////////

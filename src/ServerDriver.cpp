@@ -13,6 +13,7 @@
 #include "SystemTaskDocs.h"
 #include "ast/ServerCompilation.h"
 #include "completions/CompletionDispatch.h"
+#include "document/SemanticTokens.h"
 #include "document/SlangDoc.h"
 #include "lsp/LspTypes.h"
 #include "lsp/RequestContext.h"
@@ -1075,6 +1076,26 @@ std::optional<std::vector<lsp::DocumentHighlight>> ServerDriver::getDocDocumentH
     }
 
     return highlights;
+}
+
+std::optional<lsp::SemanticTokens> ServerDriver::getDocSemanticTokens(
+    const URI& uri, const std::optional<lsp::Range>& range, const lsp::RequestContext& ctx) {
+    const auto& config = m_config.semanticTokens.value();
+    if (!config.enabled.value()) {
+        return lsp::SemanticTokens{};
+    }
+
+    auto doc = getDocument(uri);
+    if (!doc) {
+        return std::nullopt;
+    }
+
+    auto analysis = doc->getAnalysis(ctx);
+    const auto& tokens = analysis->getSemanticTokens(ctx);
+    auto data = encodeSemanticTokens(doc->getText(), tokens, range ? &*range : nullptr, ctx);
+
+    ctx.info("Providing {} semantic tokens for {}", data.size() / 5, doc->getWsRelativePath());
+    return lsp::SemanticTokens{.data = std::move(data)};
 }
 
 void ServerDriver::addMemberReferences(std::vector<lsp::Location>& references,

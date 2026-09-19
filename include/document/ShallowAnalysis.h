@@ -9,6 +9,7 @@
 
 #include "Config.h"
 #include "ast/ActiveDesignContext.h"
+#include "document/SemanticTokens.h"
 #include "document/SymbolIndexer.h"
 #include "document/SymbolTreeVisitor.h"
 #include "document/SyntaxIndexer.h"
@@ -164,6 +165,7 @@ public:
 
     friend class DocumentHandle;
     friend class InlayHintCollector;
+    friend class SemanticTokenCollector;
 
     /// @brief Gets the appropriate scope from a symbol for member access traversal
     /// @param symbol The symbol to get the scope from
@@ -178,6 +180,11 @@ public:
 
     std::vector<lsp::InlayHint> getInlayHints(lsp::Range range,
                                               const struct Config::InlayHints& config);
+
+    /// @brief Classified semantic tokens for this document, computed on first use.
+    /// Cached for the lifetime of the analysis, so repeated full and range requests are
+    /// cheap.
+    const std::vector<SemanticToken>& getSemanticTokens(const lsp::RequestContext& ctx = {});
 
     /// @brief Finds all references to a symbol in this document and adds them to the vector
     /// @param references Vector to append references to
@@ -228,6 +235,9 @@ private:
 
     /// Symbol indexer for syntax->symbol mappings of definitions; Used for lookups
     SymbolIndexer m_symbolIndexer;
+
+    /// Cached semantic tokens, filled on the first semantic tokens request
+    std::optional<std::vector<SemanticToken>> m_semanticTokens;
 
     struct GenvarElaboration {
         const slang::ast::GenvarSymbol* source = nullptr;

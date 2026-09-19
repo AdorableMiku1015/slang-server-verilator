@@ -297,6 +297,7 @@ add_library(
   src/ast/WcpClient.cpp
   src/document/DefinitionInfo.cpp
   src/document/ShallowAnalysis.cpp
+  src/document/SemanticTokens.cpp
   src/document/SlangDoc.cpp
   src/document/SymbolIndexer.cpp
   src/document/InlayHintCollector.cpp

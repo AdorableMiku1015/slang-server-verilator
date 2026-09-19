@@ -192,6 +192,12 @@ public:
     /// @brief Get all inlay hints for the entire document
     std::vector<lsp::InlayHint> getAllInlayHints();
 
+    /// @brief Get the encoded semantic tokens for the entire document
+    std::vector<lsp::uint> getSemanticTokens();
+
+    /// @brief Get the encoded semantic tokens starting inside the given range
+    std::vector<lsp::uint> getSemanticTokens(lsp::Range range);
+
     std::vector<lsp::Range> getInactiveRegions() { return doc->getInactiveRegions(); }
 
     /// @brief Apply text edits to the document and return the resulting text
