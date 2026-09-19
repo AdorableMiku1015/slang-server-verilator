@@ -1,0 +1,101 @@
+
+
+
+module axi_lite_2_reg (
+       ^^^^^^^^^^^^^^ class[declaration,definition]
+
+    input logic clk,
+                ^^^ port[declaration]
+
+    input logic arstn,
+                ^^^^^ port[declaration]
+
+    input logic s_awvalid,
+                ^^^^^^^^^ port[declaration]
+
+    output logic s_awready,
+                 ^^^^^^^^^ port[declaration]
+
+    input logic reg_data
+                ^^^^^^^^ port[declaration]
+
+);
+
+endmodule
+
+
+
+module top (
+       ^^^ class[declaration,definition]
+
+    input logic clk,
+                ^^^ port[declaration]
+
+    input logic arstn,
+                ^^^^^ port[declaration]
+
+    input logic s_awvalid,
+                ^^^^^^^^^ port[declaration]
+
+    output logic s_awready
+                 ^^^^^^^^^ port[declaration]
+
+);
+
+    logic reg_data;
+          ^^^^^^^^ variable[declaration]
+
+
+
+    axi_lite_2_reg u_axil2reg(
+    ^^^^^^^^^^^^^^ class
+                   ^^^^^^^^^^ instance[declaration]
+
+        .clk,
+         ^^^ port
+
+        .arstn,
+         ^^^^^ port
+
+        .s_awvalid,
+         ^^^^^^^^^ port
+
+        .s_awready,
+         ^^^^^^^^^ port
+
+        .reg_data,
+         ^^^^^^^^ port
+
+        .*
+
+    );
+
+
+
+    axi_lite_2_reg u_explicit(
+    ^^^^^^^^^^^^^^ class
+                   ^^^^^^^^^^ instance[declaration]
+
+        .clk(clk),
+         ^^^ port
+             ^^^ net
+
+        .arstn(arstn),
+         ^^^^^ port
+               ^^^^^ net
+
+        .s_awvalid(s_awvalid),
+         ^^^^^^^^^ port
+                   ^^^^^^^^^ net
+
+        .s_awready(s_awready),
+         ^^^^^^^^^ port
+                   ^^^^^^^^^ variable
+
+        .reg_data(reg_data)
+         ^^^^^^^^ port
+                  ^^^^^^^^ variable
+
+    );
+
+endmodule

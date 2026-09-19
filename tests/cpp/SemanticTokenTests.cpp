@@ -161,6 +161,17 @@ std::optional<PositionedToken> findNamedToken(::DocumentHandle& hdl, std::string
     return std::nullopt;
 }
 
+/// The token covering the byte offset of `anchor` plus `offsetInAnchor`, so a caller can
+/// anchor on surrounding punctuation and point at the name inside it.
+std::optional<PositionedToken> tokenAtAnchor(::DocumentHandle& hdl, std::string_view anchor,
+                                             size_t offsetInAnchor = 0) {
+    auto text = hdl.getText();
+    auto pos = text.find(anchor);
+    if (pos == std::string::npos)
+        return std::nullopt;
+    return tokenAt(positionedTokens(hdl), static_cast<lsp::uint>(pos + offsetInAnchor));
+}
+
 /// Renders the semantic token covering each position of a document, for golden tests.
 struct SemanticElement {
     SemanticTokenType type = SemanticTokenType::Count;
@@ -517,6 +528,75 @@ endmodule
     token = findNamedToken(doc, "sig");
     REQUIRE(token.has_value());
     CHECK(token->type == SemanticTokenType::Variable);
+}
+
+TEST_CASE("SemanticTokensPortConnections") {
+    ServerHarness server("");
+    // A `.name` connection names the formal port, both in the shorthand and explicit
+    // forms, so the two should look the same even though the connected signal is a net
+    // for inputs and a variable for outputs
+    auto doc = server.openFile("semantic_ports.sv", R"(
+module axi_lite_2_reg (
+    input logic clk,
+    input logic arstn,
+    input logic s_awvalid,
+    output logic s_awready,
+    input logic reg_data
+);
+endmodule
+
+module top (
+    input logic clk,
+    input logic arstn,
+    input logic s_awvalid,
+    output logic s_awready
+);
+    logic reg_data;
+
+    axi_lite_2_reg u_axil2reg(
+        .clk,
+        .arstn,
+        .s_awvalid,
+        .s_awready,
+        .reg_data,
+        .*
+    );
+
+    axi_lite_2_reg u_explicit(
+        .clk(clk),
+        .arstn(arstn),
+        .s_awvalid(s_awvalid),
+        .s_awready(s_awready),
+        .reg_data(reg_data)
+    );
+endmodule
+)");
+
+    // Shorthand connections name the formal port
+    for (auto anchor : {".clk,", ".arstn,", ".s_awvalid,", ".s_awready,", ".reg_data,"}) {
+        auto token = tokenAtAnchor(doc, anchor, 1);
+        if (!token)
+            FAIL("no semantic token for " << anchor);
+        else
+            CHECK(token->type == SemanticTokenType::Port);
+    }
+
+    // The explicit form agrees, and the signal inside the parens keeps its own type
+    auto formal = tokenAtAnchor(doc, ".clk(", 1);
+    REQUIRE(formal.has_value());
+    CHECK(formal->type == SemanticTokenType::Port);
+
+    auto actual = tokenAtAnchor(doc, "(clk)", 1);
+    REQUIRE(actual.has_value());
+    CHECK(actual->type == SemanticTokenType::Net);
+
+    // The port declarations themselves are ports too
+    auto declaration = findNamedToken(doc, "clk");
+    REQUIRE(declaration.has_value());
+    CHECK(declaration->type == SemanticTokenType::Port);
+
+    SemanticTokenScanner scanner;
+    scanner.scanDocument(doc);
 }
 
 TEST_CASE("SemanticTokensAll") {

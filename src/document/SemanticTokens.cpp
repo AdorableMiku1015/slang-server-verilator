@@ -388,6 +388,11 @@ private:
                               .modifiers = modifierBit(SemanticTokenModifier::DefaultLibrary)};
         }
 
+        // A shorthand `.name` connection names the formal port, but the symbol index
+        // records the symbols it connects, which are nets and variables
+        if (isShorthandPortConnection(token))
+            return TokenClass{.type = SemanticTokenType::Port};
+
         if (auto cls = classifyIndexed(token))
             return cls;
         // Syntax that names something outright wins over a name lookup, which could find
@@ -395,6 +400,17 @@ private:
         if (auto cls = classifySyntax(token))
             return cls;
         return classifyReference(token);
+    }
+
+    /// True for the name of a `.name` port connection, which has no parentheses and so
+    /// denotes both the formal port and the signal connected to it.
+    bool isShorthandPortConnection(const parsing::Token& token) const {
+        auto* parent = m_syntaxes.getTokenParent(&token);
+        if (!parent || parent->kind != syntax::SyntaxKind::NamedPortConnection)
+            return false;
+
+        auto& connection = parent->as<syntax::NamedPortConnectionSyntax>();
+        return !connection.openParen && connection.name == token;
     }
 
     /// The token is part of a declaration or instantiation the symbol indexer recorded.
@@ -486,6 +502,13 @@ private:
                 auto& instance = parent->as<syntax::HierarchicalInstanceSyntax>();
                 if (instance.decl && instance.decl->name == token)
                     return TokenClass{.type = SemanticTokenType::Instance};
+            } break;
+            case syntax::SyntaxKind::NamedPortConnection: {
+                // The explicit `.name(expr)` form is also indexed as a port, but an
+                // unresolved connection isn't indexed at all
+                auto& connection = parent->as<syntax::NamedPortConnectionSyntax>();
+                if (connection.name == token)
+                    return TokenClass{.type = SemanticTokenType::Port};
             } break;
             case syntax::SyntaxKind::ExplicitNonAnsiPort: {
                 // `.name(expr)` in a non-ANSI port list declares a port, which won't be
