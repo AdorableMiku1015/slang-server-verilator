@@ -87,6 +87,7 @@ nav:
       - Versioning and releases: development/versioning.md
   - Features:
       - features/features.md
+      - features/semantic-tokens.md
       - features/formatting.md
       - features/limitations.md
       - HDL Features:

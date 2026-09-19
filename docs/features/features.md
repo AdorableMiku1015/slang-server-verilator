@@ -54,6 +54,15 @@ Go-to references are provided for every nearly all symbols except for macros. Ke
 
 ![goto-refs](/assets/images/gotorefs.gif)
 
+### Semantic Tokens
+
+Semantic tokens highlight identifiers with the meaning the compiler gave them, instead of
+what a grammar can guess: nets, ports, instances, modports, parameters, `localparam`s, and
+everything else the standard LSP token types can express. They are layered on top of the
+grammar based highlighting, and are provided for every supported client. See
+[Semantic Tokens](semantic-tokens.md) for the legend, the client mappings, and how to
+customize the colors, or set `semanticTokens.enabled` to `false` to turn them off.
+
 ### Inlay Hints
 
 Inlay hints are text that show up inline in the code to provide useful info. They can be hovered for more info, and some can be double clicked to insert some text.
@@ -76,10 +85,6 @@ Planned Inlays:
 - **Wildcard Imports** - Show which symbols are used from the import
 
 ### Planned LSP Methods:
-
-**Semantic Token Highlighting**
-This will provide additional coloring for variable names, distinguishing between wires, registers, and parameters.
-For classes/functions it will distinguish betweeen instance variables, function args and locals.
 
 **Formatting**
 This will likely live in the slang repo and also be shipped as a standalone binary. In order to have fairly nice formatting in hovers and completions, basic formatting functions already exist in this repo. This includes things like squashing white spaces to condense hover and completion types, and left aligning blocks of text for hovers and completion docs.

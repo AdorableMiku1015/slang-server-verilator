@@ -198,6 +198,25 @@ All configuration options are optional and have sensible defaults. In VSCode, th
 
 ---
 
+### `semanticTokens`
+
+:   **Type:** `SemanticTokens`
+
+    ```typescript
+    interface SemanticTokens {
+      /** Whether to provide semantic tokens for identifier highlighting */
+      enabled?: boolean          // default: true
+    }
+    ```
+
+    Semantic tokens provide identifier highlighting from the compiler's view of the design,
+    which is what distinguishes a net from a variable, or an instance from a signal. Set
+    `enabled` to `false` to leave all highlighting to the editor's grammar. See
+    [Semantic Tokens](../features/semantic-tokens.md) for the token types and the client
+    side setup.
+
+---
+
 ## Example Configuration
 
 ### Workspace config (`.slang/server.json`)

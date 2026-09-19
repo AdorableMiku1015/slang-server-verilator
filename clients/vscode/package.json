@@ -254,6 +254,76 @@
         "path": "./languages/dotf/dotf.tmLanguage.json"
       }
     ],
+    "semanticTokenScopes": [
+      {
+        "language": "verilog",
+        "scopes": {
+          "net": [
+            "variable.other.net.systemverilog"
+          ],
+          "port": [
+            "support.function.port.systemverilog"
+          ],
+          "instance": [
+            "variable.other.module.systemverilog"
+          ],
+          "modport": [
+            "support.type.scope.systemverilog"
+          ]
+        }
+      },
+      {
+        "language": "verilogheader",
+        "scopes": {
+          "net": [
+            "variable.other.net.systemverilog"
+          ],
+          "port": [
+            "support.function.port.systemverilog"
+          ],
+          "instance": [
+            "variable.other.module.systemverilog"
+          ],
+          "modport": [
+            "support.type.scope.systemverilog"
+          ]
+        }
+      },
+      {
+        "language": "systemverilog",
+        "scopes": {
+          "net": [
+            "variable.other.net.systemverilog"
+          ],
+          "port": [
+            "support.function.port.systemverilog"
+          ],
+          "instance": [
+            "variable.other.module.systemverilog"
+          ],
+          "modport": [
+            "support.type.scope.systemverilog"
+          ]
+        }
+      },
+      {
+        "language": "systemverilogheader",
+        "scopes": {
+          "net": [
+            "variable.other.net.systemverilog"
+          ],
+          "port": [
+            "support.function.port.systemverilog"
+          ],
+          "instance": [
+            "variable.other.module.systemverilog"
+          ],
+          "modport": [
+            "support.type.scope.systemverilog"
+          ]
+        }
+      }
+    ],
     "snippets": [
       {
         "language": "verilog",
