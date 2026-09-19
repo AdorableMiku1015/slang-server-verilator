@@ -32,6 +32,7 @@ import {
   toPosix,
 } from './utils'
 import { glob } from 'glob'
+import { SlangClientInfoFeature } from './lib/clientInfo'
 import { InactiveRegionsFeature } from './lib/inactiveRegions'
 import { LintManager } from './linter/LintManager'
 
@@ -42,6 +43,20 @@ class LintComponent extends ExtensionComponent {
     default: true,
     description: 'Enable diagnostics from the slang language server',
   })
+}
+
+interface QuickPickItem extends vscode.QuickPickItem {
+  value: unknown
+}
+
+interface QuickPickAction {
+  onSelectCommand: string
+  interactionSource?: slang.InteractionSource
+}
+
+interface QuickPickParams extends QuickPickAction {
+  placeholder: string
+  items: QuickPickItem[]
 }
 
 export class SlangExtension extends ActivityBarComponent {
@@ -108,6 +123,40 @@ File input is sent to stdin, and formatted output is read from stdout.',
   /// top level commands and configs
   ////////////////////////////////////////////////
   expandDir: vscode.Uri | undefined = undefined
+
+  private async executeQuickPickAction(params: QuickPickAction, value: unknown): Promise<void> {
+    if (params.interactionSource !== undefined && typeof value === 'string') {
+      await this.project.setInstance.func(value, params.interactionSource)
+      return
+    }
+
+    await vscode.commands.executeCommand(params.onSelectCommand, value)
+  }
+
+  quickPick: CommandNode = new CommandNode(
+    {
+      title: 'Quick Pick',
+    },
+    async (params: QuickPickParams) => {
+      const picked = await vscode.window.showQuickPick(params.items, {
+        placeHolder: params.placeholder,
+      })
+      if (!picked) {
+        return
+      }
+
+      await this.executeQuickPickAction(params, picked.value)
+    }
+  )
+
+  showInHierarchy: CommandNode = new CommandNode(
+    {
+      title: 'Show in Hierarchy',
+    },
+    async (params: slang.ActivateInstanceParams) => {
+      await this.project.showInHierarchy(params)
+    }
+  )
 
   rewrite: EditorButton = new EditorButton(
     {
@@ -205,6 +254,20 @@ File input is sent to stdin, and formatted output is read from stdout.',
     }
 
     this.client = new LanguageClient('slang-server', serverOptions, clientOptions)
+    const clientInfo = {
+      name: this.context.extension.packageJSON.name as string,
+      version: this.context.extension.packageJSON.version as string,
+    }
+
+    this.client.registerFeature(new SlangClientInfoFeature(clientInfo))
+    this.context.subscriptions.push(
+      this.client.onNotification(
+        'slang/activeInstanceChanged',
+        (params: slang.ActivateInstanceParams) => {
+          void this.project.onActiveInstanceChanged(params)
+        }
+      )
+    )
 
     this.client.registerFeature(this.inactiveRegions)
     this.inactiveRegions.register(this.client)
@@ -243,26 +306,17 @@ File input is sent to stdin, and formatted output is read from stdout.',
     await this.project.onStart()
 
     // Log and check version compatibility
-    const clientVersion = vscode.extensions.getExtension('Hudson-River-Trading.vscode-slang')
-      ?.packageJSON.version
-    this.logger.info(`Using slang-vscode v${clientVersion ?? 'unknown'}`)
+    const clientVersion = clientInfo.version
+    this.logger.info(`Using ${clientInfo.name} v${clientVersion}`)
 
     const serverInfo = this.client.initializeResult?.serverInfo
     const serverFullVersion = serverInfo?.version?.trim()
 
-    const showManagedInstallInfo = async () => {
-      await vscode.window.showInformationMessage(
-        'Managed slang-server installations can be installed now if `slang.path` is not set.'
-      )
-    }
-
     if (!serverInfo || !serverFullVersion) {
       this.logger.warn('Using old version of slang server without version info.')
-      await vscode.window.showWarningMessage(
-        'You are using an old version of slang-server without version information. ' +
-          'Please update your slang-server installation to ensure all features work correctly.'
+      await this.offerServerUpdate(
+        'You are using an old version of slang-server without version information.'
       )
-      await showManagedInstallInfo()
       return
     }
 
@@ -284,11 +338,10 @@ File input is sent to stdin, and formatted output is read from stdout.',
         const serverMajorMinor = `${parsedServer.major}.${parsedServer.minor}.0`
 
         if (semver.lt(serverMajorMinor, minRequiredVersion)) {
-          vscode.window.showWarningMessage(
-            `Slang server v${serverVersion} is older than minimum required v${minRequiredVersion}. ` +
-              `Please update your server installation.`
+          await this.offerServerUpdate(
+            `Slang server v${serverVersion} is older than minimum required v${minRequiredVersion} for design-aware features.`
           )
-          await showManagedInstallInfo()
+          return
         }
       }
     }
@@ -299,6 +352,40 @@ File input is sent to stdin, and formatted output is read from stdout.',
     }
   }
 
+  private async offerServerUpdate(message: string): Promise<void> {
+    if (this.path.hasConfiguredPath()) {
+      const openSetting = 'Open slang.path Setting'
+      const promptMessage =
+        `${message} Please update your server installation, or clear \`slang.path\` ` +
+        'to switch to a managed install.'
+      this.logger.warn(
+        `${promptMessage} Select "${openSetting}" in the notification, or search Settings for @id:slang.path.`
+      )
+      const response = await vscode.window.showWarningMessage(promptMessage, openSetting)
+      if (response === openSetting) {
+        await vscode.commands.executeCommand('workbench.action.openSettings', '@id:slang.path')
+      }
+      return
+    }
+
+    const install = this.path.managedInstall ? 'Update Managed Server' : 'Switch to Managed Install'
+    const promptMessage = this.path.managedInstall
+      ? `${message} Please update your managed server installation.`
+      : `${message} Please update your server installation, or switch to a managed install.`
+    this.logger.warn(
+      `${promptMessage} Select "${install}" in the notification, or restart the language server to show it again.`
+    )
+    const response = await vscode.window.showWarningMessage(promptMessage, install)
+    if (response !== install) {
+      return
+    }
+
+    const binaryPath = await this.path.installManaged(this.context, this.logger)
+    if (binaryPath !== undefined) {
+      await this.restartLanguageServer.func()
+    }
+  }
+
   private async checkForUpdates(installedVersion: string | null): Promise<void> {
     const updated = await this.path.maybeInstallUpdate(this.context, this.logger, installedVersion)
     if (!updated) {
@@ -306,10 +393,11 @@ File input is sent to stdin, and formatted output is read from stdout.',
     }
 
     const restart = 'Restart Now'
-    const resp = await vscode.window.showInformationMessage(
-      'slang-server has been updated. Restart the language server to use the new version.',
-      restart
+    const message = 'slang-server has been updated. Restart the language server to use it.'
+    this.logger.info(
+      `${message} Select "${restart}" in the notification, or run "slang: Restart Language Server".`
     )
+    const resp = await vscode.window.showInformationMessage(message, restart)
     if (resp === restart) {
       await this.restartLanguageServer.func()
     }
@@ -497,4 +585,5 @@ export async function activate(context: vscode.ExtensionContext) {
     'eirikpre.systemverilog',
     'IMCTradingBV.svlangserver',
   ])
+  return ext
 }

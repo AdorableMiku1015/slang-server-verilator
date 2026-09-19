@@ -17,6 +17,25 @@ export function isUpdateAvailable(latest: string, installed: string): boolean {
   return semver.lt(installed, latest)
 }
 
+export function chooseInstalledBinary(entries: string[], binaryName: string): string | undefined {
+  const candidates = entries.filter((entry) => entry.split(/[\\/]/).at(-1) === binaryName)
+  return candidates.sort((left, right) => {
+    const leftVersion = semver.parse(left.split(/[\\/]/)[0])
+    const rightVersion = semver.parse(right.split(/[\\/]/)[0])
+
+    if (leftVersion && rightVersion) {
+      return semver.rcompare(leftVersion, rightVersion)
+    }
+    if (leftVersion) {
+      return -1
+    }
+    if (rightVersion) {
+      return 1
+    }
+    return left.localeCompare(right)
+  })[0]
+}
+
 type GithubAsset = {
   name: string
   browser_download_url: string
@@ -26,6 +45,12 @@ type GithubRelease = {
   name: string
   tag_name: string
   assets: GithubAsset[]
+}
+
+const assetPlatformNames: PlatformMap = {
+  windows: 'windows',
+  linux: 'linux',
+  mac: 'macos',
 }
 
 export interface GithubInstallerConfig {
@@ -59,7 +84,10 @@ export async function latestRelease(config: GithubInstallerConfig): Promise<Gith
   }
 }
 
-function chooseReleaseAsset(release: GithubRelease, config: GithubInstallerConfig): GithubAsset {
+export function chooseReleaseAsset(
+  release: GithubRelease,
+  config: GithubInstallerConfig
+): GithubAsset {
   const platform = getConfigPlatform(config)
   const assetName = config.assetNames[platform]
 
@@ -70,6 +98,26 @@ function chooseReleaseAsset(release: GithubRelease, config: GithubInstallerConfi
   const asset = release.assets.find((a) => a.name === assetName)
   if (asset) {
     return asset
+  }
+
+  const architecture = assetName.match(/-(x64|arm64)(?:[.-])/)?.[1]
+  const platformName = assetPlatformNames[platform]
+  const fallback = release.assets
+    .filter((candidate) => {
+      const name = candidate.name.toLowerCase()
+      return (
+        (name.endsWith('.tar.gz') || name.endsWith('.zip')) &&
+        name.includes(`-${platformName}`) &&
+        (!architecture || name.includes(`-${architecture}`))
+      )
+    })
+    .sort(
+      (left, right) => left.name.length - right.name.length || left.name.localeCompare(right.name)
+    )[0]
+
+  if (fallback) {
+    console.warn(`Release asset '${assetName}' not found; using '${fallback.name}' instead`)
+    return fallback
   }
 
   throw new Error(`No compatible release asset '${assetName}' found for ${platform}`)

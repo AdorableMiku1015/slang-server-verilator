@@ -211,6 +211,8 @@
             }
           }
         },
+        "declKind": "Module",
+        "hasChildren": true,
         "children": []
       },
       {
@@ -537,6 +539,8 @@
             }
           }
         },
+        "declKind": "Module",
+        "hasChildren": true,
         "children": []
       },
       {
@@ -569,6 +573,8 @@
             }
           }
         },
+        "declKind": "Module",
+        "hasChildren": true,
         "children": []
       },
       {
@@ -763,6 +769,8 @@
             }
           }
         },
+        "declKind": "Module",
+        "hasChildren": true,
         "children": [
           {
             "kind": "Instance",
@@ -794,6 +802,8 @@
                 }
               }
             },
+            "declKind": "Module",
+            "hasChildren": true,
             "children": []
           },
           {
@@ -826,6 +836,8 @@
                 }
               }
             },
+            "declKind": "Module",
+            "hasChildren": true,
             "children": []
           },
           {
@@ -858,6 +870,8 @@
                 }
               }
             },
+            "declKind": "Module",
+            "hasChildren": true,
             "children": []
           },
           {
@@ -890,6 +904,8 @@
                 }
               }
             },
+            "declKind": "Module",
+            "hasChildren": true,
             "children": []
           }
         ]
@@ -960,6 +976,8 @@
             }
           }
         },
+        "declKind": "Module",
+        "hasChildren": true,
         "children": [
           {
             "kind": "Instance",
@@ -991,6 +1009,8 @@
                 }
               }
             },
+            "declKind": "Module",
+            "hasChildren": true,
             "children": []
           }
         ]
@@ -1186,6 +1206,8 @@
                     }
                   }
                 },
+                "declKind": "Module",
+                "hasChildren": true,
                 "children": []
               }
             ]
@@ -1364,6 +1386,8 @@
                     }
                   }
                 },
+                "declKind": "Module",
+                "hasChildren": true,
                 "children": []
               }
             ]
@@ -1542,6 +1566,8 @@
                     }
                   }
                 },
+                "declKind": "Module",
+                "hasChildren": true,
                 "children": []
               }
             ]

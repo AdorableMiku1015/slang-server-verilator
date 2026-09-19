@@ -37,11 +37,16 @@ struct ClientOwner {
 };
 
 class ServerHarness : private ClientOwner, public server::SlangServer {
+    inline static const lsp::ClientCapabilities defaultCapabilities{
+        .experimental = rfl::to_generic(lsp::ExperimentalClientCapabilities{
+            .inactiveRegions = lsp::InactiveRegionsClientCapabilities{.inactiveRegions = true}})};
+
 public:
     using ClientOwner::client;
 
     // Constructor with custom initialization parameters, no workspace folder set
-    explicit ServerHarness(lsp::InitializeParams params = {}) : ClientOwner(), SlangServer(client) {
+    explicit ServerHarness(lsp::InitializeParams params = {.capabilities = defaultCapabilities}) :
+        ClientOwner(), SlangServer(client) {
         getInitialize(params);
         onInitialized(lsp::InitializedParams{});
     }
@@ -50,8 +55,10 @@ public:
     explicit ServerHarness(const std::string& repoRoot) : ClientOwner(), SlangServer(client) {
         auto repoDir = (findSlangRoot() / "tests/data" / repoRoot);
         fs::current_path(repoDir);
-        getInitialize(lsp::InitializeParams{.workspaceFolders = {{lsp::WorkspaceFolder{
-                                                .uri = URI::fromFile(repoDir), .name = "test"}}}});
+        lsp::InitializeParams params{.capabilities = defaultCapabilities,
+                                     .workspaceFolders = {{lsp::WorkspaceFolder{
+                                         .uri = URI::fromFile(repoDir), .name = "test"}}}};
+        getInitialize(params);
         onInitialized(lsp::InitializedParams{});
     }
 
@@ -84,13 +91,18 @@ public:
     void checkConeCommand(const std::string& command, const std::string& path,
                           const std::set<ExpectedConeResult>& expected);
 
+    std::optional<lsp::LSPAny> executeCommand(const lsp::ExecuteCommandParams& params,
+                                              const lsp::RequestContext& ctx = {}) {
+        return getWorkspaceExecuteCommand(params, ctx);
+    }
+
     std::shared_ptr<server::SlangDoc> getDoc(const URI& uri);
 
     // Wrapper for getModulesInFile that handles relative paths
     std::vector<std::string> getModulesInFile(const std::string& fileName);
 
     std::optional<std::vector<lsp::Location>> getDocReferences(
-        const lsp::ReferenceParams& params) override;
+        const lsp::ReferenceParams& params, lsp::RequestContext ctx = {}) override;
 
     // For access to isWcpVariable
     // TODO -- remove once isWcpVariable is removed

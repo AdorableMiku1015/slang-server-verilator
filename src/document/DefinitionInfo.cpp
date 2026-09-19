@@ -118,6 +118,14 @@ void renderSymbolHeaderName(markup::Paragraph& infoPg, const ast::Symbol& symbol
         }
     }
 
+    if (auto* port = symbol.as_if<ast::ModportPortSymbol>()) {
+        infoPg
+            .appendBold(fmt::format("{} {}", getPortDirectionHeader(port->direction),
+                                    toString(symbol.kind)))
+            .appendCode(symbol.name);
+        return;
+    }
+
     // Better handling for ports to show direction
     if (auto* value = symbol.as_if<ast::ValueSymbol>()) {
         if (auto* port = value->getFirstPortBackref()) {
@@ -584,7 +592,7 @@ void renderSymbolValue(markup::Paragraph& infoPg, const ast::Symbol& symbol,
         auto& enumVal = symbol.as<ast::EnumValueSymbol>();
         const auto& value = enumVal.getValue();
         if (!value.bad()) {
-            infoPg.appendText("Value: ").appendCode(value.toString()).newLine();
+            infoPg.appendText("Value: ").appendCode(formatConstantValue(value)).newLine();
         }
     }
 }
@@ -651,6 +659,26 @@ RenderedSymbolHover renderSymbolHover(const DefinitionInfo::SymbolTarget& target
     if (!label.empty())
         result.header.appendBold(label);
     renderSymbolHeader(result.header, *target.symbol);
+
+    // Show design info for iface ports
+    if (auto* ifacePort = target.renderInterfaceConnection
+                              ? target.symbol->as_if<ast::InterfacePortSymbol>()
+                              : nullptr) {
+        if (auto* activeConnection = target.analysis->getActiveInterfaceConnection(*ifacePort);
+            activeConnection && !activeConnection->sourcePath.empty()) {
+            auto* connection = activeConnection->sourcePath.back();
+            if (sm.getFullyOriginalLoc(connection->location) !=
+                sm.getFullyOriginalLoc(ifacePort->location)) {
+                result.header.appendText("Connected to ");
+                if (!appendSourceLink(result.header, connection->location, sm,
+                                      connection->getHierarchicalPath())) {
+                    result.header.appendCode(connection->getHierarchicalPath());
+                }
+                result.header.newLine();
+            }
+        }
+    }
+
     renderSymbolType(result.type, *target.symbol, sm);
     if (target.generatedSignalCount > 1) {
         result.generatedSignals.appendText("Generated signals: ")

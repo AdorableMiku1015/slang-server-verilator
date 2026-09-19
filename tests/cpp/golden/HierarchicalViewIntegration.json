@@ -184,6 +184,8 @@
             }
           }
         },
+        "declKind": "Module",
+        "hasChildren": true,
         "children": [
           {
             "kind": "Logic",
@@ -395,6 +397,8 @@
                 }
               }
             },
+            "declKind": "Module",
+            "hasChildren": true,
             "children": []
           },
           {
@@ -631,6 +635,8 @@
             }
           }
         },
+        "declKind": "Module",
+        "hasChildren": true,
         "children": []
       },
       {

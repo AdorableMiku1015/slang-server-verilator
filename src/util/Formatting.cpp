@@ -12,6 +12,7 @@
 #include <sstream>
 #include <string>
 
+#include "slang/ast/symbols/MemberSymbols.h"
 #include "slang/ast/symbols/PortSymbols.h"
 #include "slang/ast/symbols/ValueSymbol.h"
 #include "slang/ast/types/DeclaredType.h"
@@ -556,6 +557,9 @@ std::string portString(ast::ArgumentDirection dir) {
 
 std::string getTypeString(const ast::ValueSymbol& value, TypeStringMode mode) {
     const slang::ast::Type& decl = value.getType();
+    if (auto* modportPort = value.as_if<ast::ModportPortSymbol>()) {
+        return fmt::format("{} {}", portString(modportPort->direction), getTypeString(decl, mode));
+    }
     auto port = value.getFirstPortBackref();
     if (port) {
         return fmt::format("{} {}", portString(port->port->direction), getTypeString(decl, mode));
@@ -619,6 +623,12 @@ bool isValidUtf8(std::string_view s) {
 }
 
 std::string formatConstantValue(const ConstantValue& value) {
+    if (value.isInteger()) {
+        const auto& integer = value.integer();
+        if (integer.getBitWidth() == 1 && !integer.hasUnknown())
+            return value.isTrue() ? "1" : "0";
+    }
+
     if (value.isString()) {
         const auto& str = value.str();
         if (isValidUtf8(str)) {
@@ -630,7 +640,7 @@ std::string formatConstantValue(const ConstantValue& value) {
             return escapeInvalidUtf8(str);
         }
     }
-    // For non-string values, use default toString
+    // For other values, use default toString
     return value.toString();
 }
 

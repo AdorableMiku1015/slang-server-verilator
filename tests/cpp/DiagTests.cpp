@@ -4,6 +4,11 @@
 #include "utils/GoldenTest.h"
 #include "utils/ServerHarness.h"
 #include <cstdlib>
+#include <fstream>
+#include <iterator>
+
+#include "slang/diagnostics/CompilationDiags.h"
+#include "slang/diagnostics/ExpressionsDiags.h"
 
 TEST_CASE("SingleFileDiag") {
     ServerHarness server;
@@ -164,6 +169,39 @@ TEST_CASE("PartialElaboration") {
         )");
     auto diags = doc.getDiagnostics();
     golden.record(diags);
+}
+
+TEST_CASE("ShallowCompilationDepthLimitIsNotReported") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(
+module leaf;
+endmodule
+
+module implementation;
+    leaf #(.missing_param(1)) leaf_i(.missing_port(1'b0));
+endmodule
+
+module child;
+    implementation implementation_i();
+endmodule
+
+module wrapper;
+    child child_i();
+endmodule
+)");
+
+    auto diags = doc.getDiagnostics();
+    bool sawMissingParam = false;
+    bool sawMissingPort = false;
+    for (auto& diag : diags) {
+        sawMissingParam |= diag.message == "parameter 'missing_param' does not exist in 'leaf'";
+        sawMissingPort |= diag.message == "port 'missing_port' does not exist in 'leaf'";
+    }
+
+    CHECK(diags.size() == 2);
+    CHECK(sawMissingParam);
+    CHECK(sawMissingPort);
 }
 
 TEST_CASE("IfacePortStaticAssertParamOverride") {
@@ -365,6 +403,43 @@ TEST_CASE("OpenBuildFileDoesNotOverwriteCompilationDiags") {
     }
 }
 
+TEST_CASE("OpeningSingleUnitBuildFilePreservesCompilationDiags") {
+    ServerHarness server("single_unit_build");
+
+    auto hasInstanceDiag = [](const std::vector<lsp::Diagnostic>& diagnostics) {
+        return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
+            return diagnostic.message.find("instance width differs") != std::string::npos;
+        });
+    };
+
+    for (std::string_view fileName : {"submodule.sv", "submodule_two.sv"}) {
+        auto childUri = URI::fromFile(fs::current_path() / fileName);
+        REQUIRE(hasInstanceDiag(server.client.getDiagnostics(childUri)));
+        server.openFile(std::string(fileName));
+        CHECK(hasInstanceDiag(server.client.getDiagnostics(childUri)));
+    }
+}
+
+TEST_CASE("RecreatingSingleUnitBuildDoesNotShallowAnalyzeOpenBuildFile") {
+    ServerHarness server("single_unit_build");
+    server.client.capabilities.inactiveRegionsSupported = false;
+
+    auto childUri = URI::fromFile(fs::current_path() / "submodule.sv");
+    std::ifstream file(fs::current_path() / "submodule.sv");
+    REQUIRE(file);
+    std::string text{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+
+    server.onDocDidOpen(lsp::DidOpenTextDocumentParams{
+        .textDocument = lsp::TextDocumentItem{
+            .uri = childUri, .languageId = "systemverilog", .version = 1, .text = text}});
+    REQUIRE(server.getDoc(childUri));
+    CHECK_FALSE(server.getDoc(childUri)->hasAnalysis());
+
+    server.setBuildFile("design.f");
+    REQUIRE(server.getDoc(childUri));
+    CHECK_FALSE(server.getDoc(childUri)->hasAnalysis());
+}
+
 TEST_CASE("OpenNonBuildFileGetsShallowDiags") {
     ServerHarness server("comp_repo");
     server.setBuildFile("cpu_design.f");
@@ -515,4 +590,105 @@ endmodule
                    code == "unused-but-set-variable"));
         }
     }
+}
+
+TEST_CASE("ShallowCompilationSuppressesMaxInstanceDepth") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(
+module leaf;
+endmodule
+
+module level3;
+    leaf child();
+endmodule
+
+module level2;
+    level3 child();
+endmodule
+
+module level1;
+    level2 child();
+endmodule
+
+module top;
+    level1 child();
+endmodule
+)");
+
+    auto& semanticDiags = doc.doc->getCompilation()->getSemanticDiagnostics();
+    CHECK(std::ranges::any_of(semanticDiags, [](const auto& diag) {
+        return diag.code == slang::diag::MaxInstanceDepthExceeded;
+    }));
+    CHECK(doc.getDiagnostics().empty());
+}
+
+TEST_CASE("ShallowCompilationKeepsExpressionDiagWithMatchingNumericCode") {
+    CHECK(slang::diag::BadIntegerCast.getCode() == slang::diag::MaxInstanceDepthExceeded.getCode());
+    CHECK(slang::diag::BadIntegerCast.getSubsystem() !=
+          slang::diag::MaxInstanceDepthExceeded.getSubsystem());
+
+    ServerHarness server;
+    auto doc = server.openFile("test.sv", R"(
+module top;
+    initial 4'(1.0);
+endmodule
+)");
+
+    auto diags = doc.getDiagnostics();
+    REQUIRE(diags.size() == 1);
+    CHECK(diags.front().message ==
+          "cannot change width or signedness of non-integral expression (type is 'real')");
+}
+
+TEST_CASE("ShallowCompilationChecksExpressionsPastDepthLimit") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(`default_nettype none
+module receiver #(
+    parameter int WIDTH = 1,
+    parameter int DEPTH = 1
+) (input logic value);
+endmodule
+
+module checked_module;
+    logic value;
+    assign value = missing_assign_rhs;
+    receiver #(
+        .WIDTH(missing_param_rhs),
+        .DEPTH(missing_second_param_rhs)
+    ) receiver_i(.value(missing_port_rhs));
+endmodule
+
+module level_two;
+    checked_module checked_module_i();
+endmodule
+
+module level_one;
+    level_two level_two_i();
+endmodule
+
+module top;
+    level_one level_one_i();
+endmodule
+)");
+
+    auto diags = doc.getDiagnostics();
+    bool sawAssignRhs = false;
+    bool sawParamRhs = false;
+    bool sawSecondParamRhs = false;
+    bool sawPortRhs = false;
+    for (const auto& diag : diags) {
+        sawAssignRhs |= diag.message == "use of undeclared identifier 'missing_assign_rhs'";
+        sawParamRhs |= diag.message == "use of undeclared identifier 'missing_param_rhs'";
+        sawSecondParamRhs |= diag.message ==
+                             "use of undeclared identifier 'missing_second_param_rhs'";
+        sawPortRhs |= diag.message == "use of undeclared identifier 'missing_port_rhs'";
+    }
+
+    REQUIRE(diags.size() == 4);
+    CHECK(sawAssignRhs);
+    CHECK(sawParamRhs);
+    CHECK(sawSecondParamRhs);
+    CHECK(sawPortRhs);
 }

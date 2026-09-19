@@ -10,6 +10,7 @@
 
 #include "ServerDriver.h"
 #include "document/ShallowAnalysis.h"
+#include "lsp/RequestContext.h"
 #include "lsp/URI.h"
 #include "util/Converters.h"
 #include "util/Logging.h"
@@ -21,6 +22,7 @@
 #include <string_view>
 
 #include "slang/ast/Compilation.h"
+#include "slang/diagnostics/CompilationDiags.h"
 #include "slang/diagnostics/DeclarationsDiags.h"
 #include "slang/diagnostics/Diagnostics.h"
 #include "slang/diagnostics/ExpressionsDiags.h"
@@ -34,7 +36,7 @@ using namespace slang;
 
 SlangDoc::SlangDoc(ServerDriver& driver, URI uri, SourceBuffer buffer) :
     m_driver(driver), m_sourceManager(driver.sm), m_options(driver.options), m_uri(uri),
-    m_buffer(buffer) {
+    m_wsRelativePathOffset(driver.getWsRelativePathOffset(m_uri.getPath())), m_buffer(buffer) {
 }
 
 std::optional<SourceLocation> SlangDoc::getLocation(const lsp::Position& position) {
@@ -101,27 +103,23 @@ std::shared_ptr<syntax::SyntaxTree> SlangDoc::getSyntaxTree() {
     return m_tree;
 }
 
-std::shared_ptr<ShallowAnalysis> SlangDoc::getAnalysis(bool refreshDependencies) {
-    if (!m_analysis || !m_analysis->hasValidBuffers() || refreshDependencies) {
-        // Load dependent documents from driver if not already loaded
-        if (m_dependentDocuments.empty() || refreshDependencies) {
-            m_dependentDocuments = m_driver.getDependentDocs(getSyntaxTree());
-        }
+std::shared_ptr<ShallowAnalysis> SlangDoc::refreshAnalysis(const lsp::RequestContext& ctx) {
+    ctx.throwIfCancelled("before analysis");
+    auto tree = getSyntaxTree();
+    auto trees = m_driver.getDependentTrees(tree);
+    trees.insert(trees.begin(), tree);
+    auto analysis = std::make_shared<ShallowAnalysis>(m_sourceManager, m_buffer.id, tree, m_options,
+                                                      trees, m_driver.comp.get());
+    auto topNames = analysis->getCompilation()->getRoot().topInstances |
+                    std::views::transform([](const auto& top) { return top->name; });
+    ctx.info("Analyzed {} with tops: {}", getWsRelativePath(), fmt::join(topNames, ", "));
+    m_analysis = analysis;
+    return analysis;
+}
 
-        std::vector<std::shared_ptr<syntax::SyntaxTree>> trees = {getSyntaxTree()};
-        for (const auto& doc : m_dependentDocuments) {
-            if (auto depTree = doc->getSyntaxTree()) {
-                trees.push_back(depTree);
-            }
-        }
-        m_analysis = std::make_shared<ShallowAnalysis>(m_sourceManager, m_buffer.id, m_tree,
-                                                       m_options, trees);
-        INFO("Analyzed {} with tops: {}", m_uri.getPath(),
-             fmt::join(m_analysis->getCompilation()->getRoot().topInstances |
-                           std::views::transform([](const auto& top) { return top->name; }),
-                       ", "));
-    }
-
+std::shared_ptr<ShallowAnalysis> SlangDoc::getAnalysis(const lsp::RequestContext& ctx) {
+    if (!m_analysis || !m_analysis->hasValidBuffers())
+        return refreshAnalysis(ctx);
     return m_analysis;
 }
 
@@ -252,10 +250,9 @@ void SlangDoc::issueParseDiagnostics(DiagnosticEngine& diagEngine) {
     }
 }
 
-void SlangDoc::issueDiagnosticsTo(DiagnosticEngine& diagEngine) {
+void SlangDoc::issueDiagnosticsTo(DiagnosticEngine& diagEngine, const lsp::RequestContext& ctx) {
     // Issue compilation diagnostics
-    auto analysis = getAnalysis(true);
-    auto& shallowComp = *analysis->getCompilation();
+    auto analysis = refreshAnalysis(ctx);
 
     // Parse diags (just this tree, others will be handled by their SlangDoc objects
     for (auto& diag : getSyntaxTree()->diagnostics()) {
@@ -264,14 +261,22 @@ void SlangDoc::issueDiagnosticsTo(DiagnosticEngine& diagEngine) {
 
     // Parse and shallow compilation diagnostics
     // There will be many diags outside the buffer, like unknown modules.
-    for (auto& diag : shallowComp.getSemanticDiagnostics()) {
+    const auto& semanticDiagnostics = analysis->getSemanticDiagnostics();
+    ctx.throwIfCancelled("before publishing semantic diagnostics");
+    for (auto& diag : semanticDiagnostics) {
         if (m_sourceManager.getFullyOriginalLoc(diag.location).buffer() != m_buffer.id) {
+            continue;
+        }
+        if (diag.code == slang::diag::MaxInstanceDepthExceeded) {
             continue;
         }
         diagEngine.issue(diag);
     }
+
     // Analysis on the shallow compilation (unused, multidriven, etc)
-    for (auto& diag : analysis->getAnalysisDiags()) {
+    auto analysisDiagnostics = analysis->getAnalysisDiags();
+    ctx.throwIfCancelled("before publishing analysis diagnostics");
+    for (auto& diag : analysisDiagnostics) {
         if (m_sourceManager.getFullyOriginalLoc(diag.location).buffer() != m_buffer.id) {
             continue;
         }
@@ -279,11 +284,13 @@ void SlangDoc::issueDiagnosticsTo(DiagnosticEngine& diagEngine) {
     }
 }
 
-std::vector<lsp::Range> SlangDoc::getInactiveRegions() {
+std::vector<lsp::Range> SlangDoc::getInactiveRegions(const lsp::RequestContext& ctx) {
+    ctx.throwIfCancelled("before collecting inactive regions");
     std::vector<lsp::Range> result;
-    result.reserve(getAnalysis()->syntaxes.disabledRegions.size());
+    auto analysis = getAnalysis(ctx);
+    result.reserve(analysis->syntaxes.disabledRegions.size());
 
-    for (const auto& region : getAnalysis()->syntaxes.disabledRegions) {
+    for (const auto& region : analysis->syntaxes.disabledRegions) {
         result.push_back(toRange(region, m_sourceManager));
     }
 

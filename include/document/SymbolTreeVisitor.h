@@ -11,62 +11,79 @@
 #include "lsp/LspTypes.h"
 #include <memory>
 #include <optional>
+#include <string>
+#include <vector>
 
-#include "slang/syntax/AllSyntax.h"
-#include "slang/syntax/SyntaxNode.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include "slang/text/SourceManager.h"
+
 namespace server {
-using namespace slang::syntax;
-using namespace slang;
 
-class SymbolTreeVisitor : public SyntaxVisitor<SymbolTreeVisitor> {
-    const SourceManager& m_sourceManager;
-    std::span<const DefineDirectiveSyntax* const> m_macros;
-    std::vector<lsp::DocumentSymbol> m_symbols;
-    std::vector<lsp::DocumentSymbol>* m_symbols_ptr;
-
-private:
-    [[nodiscard]] bool extract_range(const slang::parsing::Token& token, lsp::DocumentSymbol&,
-                                     std::optional<std::string> overrideName = std::nullopt);
-    void handle_module(const auto&);
-    void handle_decl_list(const auto&, lsp::SymbolKind);
-    void handle_recursive(const SyntaxNode&, lsp::DocumentSymbol&);
-
+class SymbolTreeVisitor : public slang::syntax::SyntaxVisitor<SymbolTreeVisitor> {
 public:
-    SymbolTreeVisitor(const SourceManager&);
+    explicit SymbolTreeVisitor(const slang::SourceManager& sourceManager);
 
-    std::vector<lsp::DocumentSymbol> get_symbols(std::shared_ptr<SyntaxTree> tree, bool);
+    std::vector<lsp::DocumentSymbol> getSymbols(std::shared_ptr<slang::syntax::SyntaxTree> tree,
+                                                bool macros);
     void invalidate() { m_symbols.clear(); }
 
-    void handle(const GenerateBlockSyntax&);
+    void handle(const slang::syntax::GenerateBlockSyntax& node);
 
     // ModuleDeclarationSyntax captures:
     //   - module
     //   - interface
     //   - package
     //   - program
-    void handle(const ModuleDeclarationSyntax&);
-    void handle(const ExternModuleDeclSyntax&);
-    void handle(const ClassDeclarationSyntax&);
+    void handle(const slang::syntax::ModuleDeclarationSyntax& node);
+    void handle(const slang::syntax::ExternModuleDeclSyntax& node);
+    void handle(const slang::syntax::ClassDeclarationSyntax& node);
+    void handle(const slang::syntax::TypedefDeclarationSyntax& node);
+    void handle(const slang::syntax::ForwardTypedefDeclarationSyntax& node);
 
-    // Instance declaration
-    void handle(const HierarchyInstantiationSyntax&);
+    void handle(const slang::syntax::HierarchyInstantiationSyntax& node);
+    void handle(const slang::syntax::HierarchicalInstanceSyntax& node);
+
+    void handle(const slang::syntax::ProceduralBlockSyntax& node);
+    void handle(const slang::syntax::ConditionalStatementSyntax& node);
+    void handle(const slang::syntax::ElseClauseSyntax& node);
+    void handle(const slang::syntax::ForLoopStatementSyntax& node);
+    void handle(const slang::syntax::CaseStatementSyntax& node);
 
     // FunctionDeclarationSyntax captures:
     //   - function
     //   - task
-    void handle(const FunctionDeclarationSyntax&);
+    void handle(const slang::syntax::FunctionDeclarationSyntax& node);
 
-    void handle(const NetDeclarationSyntax&);
-    void handle(const LocalVariableDeclarationSyntax&);
-    void handle(const DataDeclarationSyntax&);
-    void handle(const PortDeclarationSyntax&);
-    void handle(const ImplicitAnsiPortSyntax&);
+    void handle(const slang::syntax::NetDeclarationSyntax& node);
+    void handle(const slang::syntax::LocalVariableDeclarationSyntax& node);
+    void handle(const slang::syntax::DataDeclarationSyntax& node);
+    void handle(const slang::syntax::StructUnionMemberSyntax& node);
+    void handle(const slang::syntax::EnumTypeSyntax& node);
+    void handle(const slang::syntax::PortDeclarationSyntax& node);
+    void handle(const slang::syntax::ImplicitAnsiPortSyntax& node);
+    void handle(const slang::syntax::ParameterDeclarationStatementSyntax& node);
     // ParameterDeclarationSyntax captures:
     //   - parameter
     //   - localparam
-    void handle(const ParameterDeclarationSyntax&);
+    void handle(const slang::syntax::ParameterDeclarationSyntax& node);
+
+    void handle(const slang::syntax::MemberSyntax& node);
+
+private:
+    [[nodiscard]] bool extractRange(const slang::parsing::Token& token, lsp::DocumentSymbol& symbol,
+                                    std::optional<std::string> overrideName = std::nullopt,
+                                    bool allowMacroLocation = false);
+    void handleModule(const auto& node);
+    void handleTypedef(const auto& node, lsp::SymbolKind kind);
+    void handleDeclList(const auto& node, lsp::SymbolKind kind);
+    void handleStatement(const slang::syntax::SyntaxNode& node,
+                         const slang::parsing::Token& keyword);
+    void handleRecursive(const slang::syntax::SyntaxNode& node, lsp::DocumentSymbol& symbol);
+
+    const slang::SourceManager& m_sourceManager;
+    std::vector<lsp::DocumentSymbol> m_symbols;
+    std::vector<lsp::DocumentSymbol>* m_currentSymbols = &m_symbols;
 };
+
 } // namespace server

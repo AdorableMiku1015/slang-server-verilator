@@ -8,6 +8,7 @@
 #pragma once
 
 #include "Config.h"
+#include "ast/ActiveDesignContext.h"
 #include "document/SymbolIndexer.h"
 #include "document/SymbolTreeVisitor.h"
 #include "document/SyntaxIndexer.h"
@@ -16,6 +17,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -37,6 +39,8 @@ namespace server {
 using namespace slang;
 
 class DocumentHandle;
+class ServerCompilation;
+
 class ShallowAnalysis {
 public:
     /// @brief Constructs a DocumentAnalysis instance with syntax and symbol indexing
@@ -51,10 +55,13 @@ public:
     /// @param trees Additional syntax trees that this document depends on
     ShallowAnalysis(SourceManager& sourceManager, slang::BufferID buffer,
                     std::shared_ptr<slang::syntax::SyntaxTree> tree, slang::Bag options,
-                    const std::vector<std::shared_ptr<slang::syntax::SyntaxTree>>& allTrees = {});
+                    const std::vector<std::shared_ptr<slang::syntax::SyntaxTree>>& allTrees = {},
+                    const ServerCompilation* design = nullptr);
 
     /// @brief Retrieves document symbols for LSP outline view, called right after open
-    /// @return Vector of LSP document symbols representing the document structure
+    /// @return Tree of LSP document symbols representing the document CST structure
+    /// This also provides range info for "sticky scroll", where the open scopes stick at the top of
+    /// the editor to provide context
     std::vector<lsp::DocumentSymbol> getDocSymbols();
 
     /// @brief Gets document links for include directives, called right after open
@@ -102,6 +109,9 @@ public:
 
     const std::unique_ptr<slang::ast::Compilation>& getCompilation() const { return m_compilation; }
 
+    /// @brief Gets semantic diagnostics after shallowly elaborating edited-file definitions.
+    const Diagnostics& getSemanticDiagnostics();
+
     /// @brief Ensures the shallow compilation has been analyzed and returns the slang
     /// `AnalysisManager`. Returns nullptr if analysis could not be run, for example no top
     /// instances.
@@ -110,6 +120,17 @@ public:
     /// @brief Gets a list of drivers for a given value symbol
     std::vector<const slang::analysis::ValueDriver*> getDrivers(
         const slang::ast::ValueSymbol& symbol);
+
+    /// @brief Return the corresponding symbol from the selected full-design instance, if any.
+    const slang::ast::Symbol* getDesignSymbol(const slang::ast::Symbol& shallowSymbol) const;
+
+    /// Return the full-design instance referenced by a module, named parameter, or named port
+    /// token at an instantiation site.
+    std::optional<std::string> getDesignInstancePathAtToken(
+        const slang::parsing::Token* token) const;
+
+    const InterfaceConnection* getActiveInterfaceConnection(
+        const slang::ast::InterfacePortSymbol& port) const;
 
     /// @brief Gets the source manager for this analysis
     SourceManager& getSourceManager() const { return m_sourceManager; }
@@ -186,11 +207,16 @@ private:
     /// Compilation context for symbol resolution
     std::unique_ptr<slang::ast::Compilation> m_compilation;
 
+    /// Information from the active design when a top level or filelist is set
+    std::optional<ActiveDesignContext> m_activeDesign;
+
     /// Analysis manager for running driver analysis (multi-driven, unused, etc)
     std::unique_ptr<slang::analysis::AnalysisManager> m_driverAnalysis = nullptr;
 
     /// Cached diagnostics from the latest analysis run, if available
     std::optional<Diagnostics> m_cachedAnalysisDiags;
+
+    bool m_editedDefinitionsElaborated = false;
 
     /// Analysis options for driver analysis (numThreads=1 to avoid persistent threads)
     slang::analysis::AnalysisOptions m_analysisOptions;
@@ -232,11 +258,9 @@ private:
     /// @brief Helper method to handle lookup for scoped names (e.g., pkg::identifier)
     /// @param nameSyntax The name syntax to look up
     /// @param context The AST context for the lookup
-    /// @param scope The scope to search in
     /// @return Pointer to the found symbol, or nullptr if not found
     const slang::ast::Symbol* handleScopedNameLookup(const slang::syntax::NameSyntax* nameSyntax,
-                                                     const slang::ast::ASTContext& context,
-                                                     const slang::ast::Scope* scope) const;
+                                                     const slang::ast::ASTContext& context) const;
 
     /// @brief Helper method to handle symbol lookup for interface port headers
     /// @param node The token being queried

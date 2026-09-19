@@ -2,7 +2,7 @@
   "name": "vscode-slang",
   "displayName": "slang-server: Verilog/SystemVerilog LSP",
   "description": "Verilog and SystemVerilog support via the slang language server.",
-  "version": "0.2.17-test.10",
+  "version": "0.3.1",
   "publisher": "Hudson-River-Trading",
   "keywords": [
     "verilog",
@@ -410,25 +410,6 @@
     },
     "commands": [
       {
-        "command": "slang.project.instancesView.copyHierarchyPath",
-        "title": "Copy Path",
-        "viewItems": [
-          "Instance"
-        ],
-        "icon": "$(files)",
-        "isSubmenu": true,
-        "keybind": "cmd+c"
-      },
-      {
-        "command": "slang.project.instancesView.showInWaveform",
-        "title": "Show in Waveform",
-        "viewItems": [
-          "Instance"
-        ],
-        "icon": "$(graph-line)",
-        "keybind": "w"
-      },
-      {
         "command": "slang.project.setTopLevel",
         "title": "Set Top Level",
         "shortTitle": "Set Top",
@@ -450,14 +431,31 @@
       },
       {
         "command": "slang.project.fuzzyFindInstance",
-        "title": "Fuzzy Find Instances",
+        "title": "Find in Hierarchy",
         "icon": "$(search-view-icon)",
         "keybind": "cmd+f",
         "keybindContainer": true
       },
       {
+        "command": "slang.quickPick",
+        "title": "slang: Quick Pick"
+      },
+      {
+        "command": "slang.showInHierarchy",
+        "title": "slang: Show in Hierarchy"
+      },
+      {
         "command": "slang.project.setInstance",
         "title": "slang: Select Instance"
+      },
+      {
+        "command": "slang.project.selectModuleInstance",
+        "title": "slang: Select Module Instance"
+      },
+      {
+        "command": "slang.project.instancesView.gotoInstantiation",
+        "title": "Go to Instantiation",
+        "icon": "$(go-to-file)"
       },
       {
         "command": "slang.project.showBuildFile",
@@ -491,17 +489,6 @@
         "title": "slang: Refresh Compilation",
         "icon": "$(refresh)",
         "shown": true
-      },
-      {
-        "command": "slang.project.showSourceFile",
-        "title": "Show Module",
-        "viewItems": [
-          "Module"
-        ],
-        "icon": {
-          "light": "./resources/light/go-to-file.svg",
-          "dark": "./resources/dark/go-to-file.svg"
-        }
       },
       {
         "command": "slang.project.showInWaveform",
@@ -632,9 +619,9 @@
       ],
       "view/item/context": [
         {
-          "command": "slang.project.showSourceFile",
+          "command": "slang.project.instancesView.gotoInstantiation",
           "group": "inline",
-          "when": "view == slang.project && viewItem == Module"
+          "when": "view == slang.project.instancesView && viewItem == Instance"
         },
         {
           "command": "slang.project.showInWaveform",
@@ -648,18 +635,8 @@
         },
         {
           "command": "slang.project.copyHierarchyPath",
-          "group": "submenu@4",
+          "group": "submenu@3",
           "when": "view == slang.project"
-        },
-        {
-          "command": "slang.project.instancesView.copyHierarchyPath",
-          "group": "submenu@5",
-          "when": "view == slang.project.instancesView && viewItem == Instance"
-        },
-        {
-          "command": "slang.project.instancesView.showInWaveform",
-          "group": "inline",
-          "when": "view == slang.project.instancesView && viewItem == Instance"
         }
       ],
       "editor/title": [
@@ -709,17 +686,6 @@
         "command": "slang.project.copyHierarchyPath",
         "when": "focusedView == slang.project && !inputFocus",
         "mac": "cmd+c"
-      },
-      {
-        "key": "ctrl+c",
-        "command": "slang.project.instancesView.copyHierarchyPath",
-        "when": "focusedView == slang.project.instancesView && !inputFocus",
-        "mac": "cmd+c"
-      },
-      {
-        "key": "w",
-        "command": "slang.project.instancesView.showInWaveform",
-        "when": "focusedView == slang.project.instancesView && !inputFocus"
       }
     ]
   },
@@ -742,6 +708,7 @@
     "build-tests": "tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
     "test": "pnpm build-tests && tape out/test/**/*.js",
+    "test:integration": "pnpm build-tests && pnpm build && node out/integration/runTest.js",
     "prerelease:alpha": "ts-node scripts/update-alpha-version.ts",
     "lint:ts": "eslint src --ext ts --fix",
     "lint": "pnpm lint:ts",
@@ -773,6 +740,7 @@
     "@types/which": "^3.0.3",
     "@typescript-eslint/eslint-plugin": "^8.21.0",
     "@typescript-eslint/parser": "^8.21.0",
+    "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^3.7.1",
     "compressing": "^2.1.0",
     "depcheck": "^1.4.7",
