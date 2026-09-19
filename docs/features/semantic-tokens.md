@@ -35,22 +35,30 @@ the box, and everything after them needs a client side mapping.
 
 The legend also advertises four modifiers: `declaration`, `definition`, `readonly` (for
 `localparam`, `genvar`, ...), and `defaultLibrary` (macro definitions and system tasks).
+Clients can select on them for a finer grained color, which is how a port declaration ends
+up looking like a variable while a port connection does not.
 
 ### Type Mapping
 
 The four SystemVerilog specific types are mapped onto scopes from the same families that
 the bundled
 [systemverilog grammar](https://github.com/hudson-trading/slang-server/tree/main/external/vscode-system-verilog)
-uses for those constructs, so semantic tokens agree with the colors a file already had. For
-example, `port` reuses the very scope the grammar gives to a port name in a connection,
-which is what makes the shorthand `.port` and the explicit `.port(sig)` form look alike.
+uses for those constructs, so semantic tokens agree with the colors a file already had.
+Tokens that carry a modifier can be mapped separately, which is how a port declaration is
+colored like the signal it stands for while a port connection keeps the port color.
 
 | Type | VSCode scope (`semanticTokenScopes`) | Neovim highlight group |
 | ---- | ------------------------------------ | ---------------------- |
 | `net` | `variable.other.net.systemverilog` | `@lsp.type.net` |
 | `port` | `support.function.port.systemverilog` | `@lsp.type.port` |
+| `port.declaration` | `variable.other.port.systemverilog` | `@lsp.typemod.port.declaration` |
 | `instance` | `variable.other.module.systemverilog` | `@lsp.type.instance` |
 | `modport` | `support.type.scope.systemverilog` | `@lsp.type.modport` |
+
+`port` is the scope a port name has in a connection, which is what makes the shorthand
+`.port` and the explicit `.port(sig)` form look alike. Its declaration variant resolves
+like a variable instead, so that a port list does not stand out from the signals next to
+it, and a reader can still tell a port connection from the signal inside it.
 
 ## What Is Highlighted
 
@@ -92,6 +100,8 @@ they keep the tree-sitter colors until they are given one:
 
 ```lua
 vim.api.nvim_set_hl(0, "@lsp.type.port", { fg = "#34bfd0" })
+-- Modifiers are looked up separately, e.g. for the declarations of ports
+vim.api.nvim_set_hl(0, "@lsp.typemod.port.declaration", { link = "@lsp.type.port" })
 ```
 
 The engine is part of Neovim itself (`vim.lsp.semantic_tokens`), and runs for servers that

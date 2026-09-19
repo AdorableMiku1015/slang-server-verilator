@@ -577,23 +577,28 @@ endmodule
         auto token = tokenAtAnchor(doc, anchor, 1);
         if (!token)
             FAIL("no semantic token for " << anchor);
-        else
+        else {
             CHECK(token->type == SemanticTokenType::Port);
+            // A connection is not a declaration; clients color the two differently
+            CHECK(!hasModifier(*token, SemanticTokenModifier::Declaration));
+        }
     }
 
     // The explicit form agrees, and the signal inside the parens keeps its own type
     auto formal = tokenAtAnchor(doc, ".clk(", 1);
     REQUIRE(formal.has_value());
     CHECK(formal->type == SemanticTokenType::Port);
+    CHECK(!hasModifier(*formal, SemanticTokenModifier::Declaration));
 
     auto actual = tokenAtAnchor(doc, "(clk)", 1);
     REQUIRE(actual.has_value());
     CHECK(actual->type == SemanticTokenType::Net);
 
-    // The port declarations themselves are ports too
+    // The port declarations themselves are ports too, and are marked as declarations
     auto declaration = findNamedToken(doc, "clk");
     REQUIRE(declaration.has_value());
     CHECK(declaration->type == SemanticTokenType::Port);
+    CHECK(hasModifier(*declaration, SemanticTokenModifier::Declaration));
 
     SemanticTokenScanner scanner;
     scanner.scanDocument(doc);

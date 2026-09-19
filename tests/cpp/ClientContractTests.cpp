@@ -65,14 +65,14 @@ std::optional<std::string> readRepoFile(std::string_view relative) {
 }
 
 /// The legend of the running server, as advertised to clients.
-std::vector<std::string> getLegendTokenTypes() {
+lsp::SemanticTokensLegend getLegend() {
     ServerHarness server;
     auto result = server.getInitialize(lsp::InitializeParams{});
 
     REQUIRE(result.capabilities.semanticTokensProvider.has_value());
     auto& options = rfl::get<lsp::SemanticTokensOptions>(
         *result.capabilities.semanticTokensProvider);
-    return options.legend.tokenTypes;
+    return options.legend;
 }
 
 /// The token types that are not part of the standard LSP set, and therefore need a client
@@ -106,22 +106,45 @@ struct VscodePackage {
     VscodeContributes contributes;
 };
 
-/// The token type of a `semanticTokenScopes` key, which may carry modifiers after a dot,
-/// e.g. "port.declaration".
-std::string scopeEntryType(const std::string& key) {
-    auto dot = key.find('.');
-    return dot == std::string::npos ? key : key.substr(0, dot);
+/// The token type of a `semanticTokenScopes` key, with the modifiers that follow it after
+/// dots, like "port.declaration".
+struct ScopeKey {
+    std::string type;
+    std::vector<std::string> modifiers;
+};
+
+ScopeKey parseScopeKey(const std::string& key) {
+    std::vector<std::string> parts;
+    size_t start = 0;
+    while (start <= key.size()) {
+        auto dot = key.find('.', start);
+        parts.emplace_back(
+            key.substr(start, dot == std::string::npos ? std::string::npos : dot - start));
+        if (dot == std::string::npos)
+            break;
+        start = dot + 1;
+    }
+
+    ScopeKey result{.type = parts.front()};
+    result.modifiers.assign(parts.begin() + 1, parts.end());
+    return result;
 }
 
 } // namespace
 
 TEST_CASE("SemanticTokenLegendListsCustomTypesLast") {
-    auto legend = getLegendTokenTypes();
+    auto legend = getLegend();
+    auto& tokenTypes = legend.tokenTypes;
 
     auto names = semanticTokenTypeNames();
-    REQUIRE(legend.size() == names.size());
+    REQUIRE(tokenTypes.size() == names.size());
     for (size_t i = 0; i < names.size(); i++)
-        CHECK(legend[i] == names[i]);
+        CHECK(tokenTypes[i] == names[i]);
+
+    auto modifiers = semanticTokenModifierNames();
+    REQUIRE(legend.tokenModifiers.size() == modifiers.size());
+    for (size_t i = 0; i < modifiers.size(); i++)
+        CHECK(legend.tokenModifiers[i] == modifiers[i]);
 
     auto isCustom = [](size_t index) {
         return isCustomSemanticTokenType(static_cast<SemanticTokenType>(index));
@@ -129,15 +152,15 @@ TEST_CASE("SemanticTokenLegendListsCustomTypesLast") {
 
     // Clients color the standard types out of the box, and use the documented position of
     // the custom ones (see the comment on SemanticTokenType) to tell the two sets apart.
-    size_t firstCustom = legend.size();
-    for (size_t i = 0; i < legend.size(); i++) {
+    size_t firstCustom = tokenTypes.size();
+    for (size_t i = 0; i < tokenTypes.size(); i++) {
         if (isCustom(i)) {
             firstCustom = i;
             break;
         }
     }
-    REQUIRE(firstCustom < legend.size());
-    for (size_t i = 0; i < legend.size(); i++)
+    REQUIRE(firstCustom < tokenTypes.size());
+    for (size_t i = 0; i < tokenTypes.size(); i++)
         CHECK(isCustom(i) == (i >= firstCustom));
 }
 
@@ -150,15 +173,22 @@ TEST_CASE("VscodeSemanticTokenScopesCoverCustomTypes") {
     REQUIRE(package.has_value());
     auto& contributes = package->contributes;
 
-    // Every legend type referenced by a scope mapping has to exist, so that a renamed or
-    // removed token type does not silently fall back to the TextMate colors.
-    auto legend = getLegendTokenTypes();
-    std::set<std::string> legendTypes(legend.begin(), legend.end());
+    // Every legend type and modifier referenced by a scope mapping has to exist, so that a
+    // renamed token type does not silently fall back to the TextMate colors.
+    auto legend = getLegend();
+    std::set<std::string> legendTypes(legend.tokenTypes.begin(), legend.tokenTypes.end());
+    std::set<std::string> legendModifiers(legend.tokenModifiers.begin(),
+                                          legend.tokenModifiers.end());
     for (const auto& entry : contributes.semanticTokenScopes) {
         for (const auto& [key, scopes] : entry.scopes) {
+            auto parsed = parseScopeKey(key);
             INFO("scope mapping '" << key << "' of language " << entry.language.value_or("<any>"));
-            CHECK(legendTypes.count(scopeEntryType(key)) == 1);
+            CHECK(legendTypes.count(parsed.type) == 1);
             CHECK(!scopes.empty());
+            for (const auto& modifier : parsed.modifiers) {
+                INFO("modifier '" << modifier << "'");
+                CHECK(legendModifiers.count(modifier) == 1);
+            }
         }
     }
 
@@ -170,7 +200,7 @@ TEST_CASE("VscodeSemanticTokenScopesCoverCustomTypes") {
     for (const auto& entry : contributes.semanticTokenScopes) {
         auto& target = entry.language ? languageScopes[*entry.language] : globalScopes;
         for (const auto& key : entry.scopes | std::views::keys)
-            target.insert(scopeEntryType(key));
+            target.insert(parseScopeKey(key).type);
     }
 
     std::vector<std::string> hdlLanguages;
@@ -186,6 +216,24 @@ TEST_CASE("VscodeSemanticTokenScopesCoverCustomTypes") {
             INFO("custom token type '" << type << "'");
             CHECK((globalScopes.count(type) == 1 || languageScopes[language].count(type) == 1));
         }
+    }
+
+    // Port declarations are colored like the signals they are used as, while the port
+    // connections keep the port color; the server marks the two with the declaration
+    // modifier, so the client can tell them apart. See SemanticTokensPortConnections.
+    bool globalDeclaration = false;
+    std::set<std::string> declarationLanguages;
+    for (const auto& entry : contributes.semanticTokenScopes) {
+        if (entry.scopes.count("port.declaration") == 0)
+            continue;
+        if (entry.language)
+            declarationLanguages.insert(*entry.language);
+        else
+            globalDeclaration = true;
+    }
+    for (const auto& language : hdlLanguages) {
+        INFO("language '" << language << "'");
+        CHECK((globalDeclaration || declarationLanguages.count(language) == 1));
     }
 }
 

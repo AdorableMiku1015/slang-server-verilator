@@ -264,6 +264,9 @@
           "port": [
             "support.function.port.systemverilog"
           ],
+          "port.declaration": [
+            "variable.other.port.systemverilog"
+          ],
           "instance": [
             "variable.other.module.systemverilog"
           ],
@@ -280,6 +283,9 @@
           ],
           "port": [
             "support.function.port.systemverilog"
+          ],
+          "port.declaration": [
+            "variable.other.port.systemverilog"
           ],
           "instance": [
             "variable.other.module.systemverilog"
@@ -298,6 +304,9 @@
           "port": [
             "support.function.port.systemverilog"
           ],
+          "port.declaration": [
+            "variable.other.port.systemverilog"
+          ],
           "instance": [
             "variable.other.module.systemverilog"
           ],
@@ -314,6 +323,9 @@
           ],
           "port": [
             "support.function.port.systemverilog"
+          ],
+          "port.declaration": [
+            "variable.other.port.systemverilog"
           ],
           "instance": [
             "variable.other.module.systemverilog"
