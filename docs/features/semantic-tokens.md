@@ -56,9 +56,11 @@ colored like the signal it stands for while a port connection keeps the port col
 | `modport` | `support.type.scope.systemverilog` | `@lsp.type.modport` |
 
 `port` is the scope a port name has in a connection, which is what makes the shorthand
-`.port` and the explicit `.port(sig)` form look alike. Its declaration variant resolves
-like a variable instead, so that a port list does not stand out from the signals next to
-it, and a reader can still tell a port connection from the signal inside it.
+`.port` and the explicit `.port(sig)` form look alike. Its declaration variant resolves to
+variable scopes as well, including `variable.other.readwrite` and `entity.name.variable`
+(the scopes vscode uses for its own `variable` type), so a port list does not stand out from
+the signals next to it, while a reader can still tell a port connection from the signal
+inside it.
 
 ## What Is Highlighted
 
