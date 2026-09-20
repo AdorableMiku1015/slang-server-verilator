@@ -604,6 +604,79 @@ endmodule
     scanner.scanDocument(doc);
 }
 
+TEST_CASE("SemanticTokensScopedNameReferences") {
+    ServerHarness server("");
+    // The member of a `::` lookup is not visible in the enclosing scope, so it is resolved
+    // through the qualified name, the same way hover and goto resolve it
+    auto doc = server.openFile("semantic_scoped.sv", R"(
+package pkg;
+    localparam int WIDTH = 8;
+    parameter int PBAR = 5;
+endpackage
+
+module child #(parameter int W = 1) (input logic [W-1:0] d);
+endmodule
+
+module top (
+    input logic [pkg::WIDTH-1:0] data
+);
+    typedef enum logic [1:0] {LOC_A, LOC_B} loc_e;
+    logic [pkg::WIDTH-1:0] sig;
+    localparam int X = pkg::PBAR;
+    localparam int Y = loc_e::LOC_A;
+    localparam int Z = pkg::MISSING;
+    child #(.W(pkg::WIDTH)) u_child (.d(sig));
+endmodule
+)");
+
+    // The qualifier is a namespace, and the member is colored like its declaration
+    auto qualifier = findNamedToken(doc, "pkg", 1);
+    REQUIRE(qualifier.has_value());
+    CHECK(qualifier->type == SemanticTokenType::Namespace);
+
+    auto declaration = findNamedToken(doc, "WIDTH");
+    REQUIRE(declaration.has_value());
+    CHECK(declaration->type == SemanticTokenType::Parameter);
+    CHECK(hasModifier(*declaration, SemanticTokenModifier::Declaration));
+    CHECK(hasModifier(*declaration, SemanticTokenModifier::ReadOnly));
+
+    // Every qualified reference, whether it is a dimension, an instance parameter or an
+    // expression
+    for (size_t occurrence : {1, 2, 3}) {
+        auto reference = findNamedToken(doc, "WIDTH", occurrence);
+        if (!reference)
+            FAIL("no semantic token for WIDTH occurrence " << occurrence);
+        else {
+            CHECK(reference->type == SemanticTokenType::Parameter);
+            CHECK(!hasModifier(*reference, SemanticTokenModifier::Declaration));
+            CHECK(hasModifier(*reference, SemanticTokenModifier::ReadOnly));
+        }
+    }
+
+    // A reference carries the modifiers of its declaration, apart from the declaration
+    // marker itself
+    auto parameterDeclaration = findNamedToken(doc, "PBAR");
+    REQUIRE(parameterDeclaration.has_value());
+    auto parameter = findNamedToken(doc, "PBAR", 1);
+    REQUIRE(parameter.has_value());
+    CHECK(parameter->type == parameterDeclaration->type);
+    CHECK(parameter->modifiers ==
+          (parameterDeclaration->modifiers & ~modifierBit(SemanticTokenModifier::Declaration)));
+
+    // Enum members resolve through their type
+    auto enumMember = findNamedToken(doc, "LOC_A", 1);
+    REQUIRE(enumMember.has_value());
+    CHECK(enumMember->type == SemanticTokenType::EnumMember);
+    CHECK(!hasModifier(*enumMember, SemanticTokenModifier::Declaration));
+
+    // A name that does not resolve has no token at all, and neither does the separator
+    CHECK(!findNamedToken(doc, "MISSING").has_value());
+    CHECK(!findNamedToken(doc, "::").has_value());
+
+    SemanticTokenScanner scanner;
+    scanner.scanDocument(doc);
+}
+
 TEST_CASE("SemanticTokensAll") {
     /// Semantic tokens on the comprehensive all.sv test file
     ServerHarness server("");

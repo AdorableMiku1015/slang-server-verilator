@@ -124,6 +124,7 @@ module m2 #(
 
     input p::y2 d2,
           ^ namespace
+             ^^ type
                 ^^ port[declaration]
 
      interface.mod d, .e());
@@ -1301,6 +1302,7 @@ module m7;
     real r = D::foo();
          ^ variable[declaration]
              ^ class
+                ^^^ function
 
 endmodule
 

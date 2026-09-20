@@ -1,0 +1,70 @@
+
+
+
+package pkg;
+        ^^^ namespace[declaration]
+
+    localparam int WIDTH = 8;
+                   ^^^^^ parameter[declaration,readonly]
+
+    parameter int PBAR = 5;
+                  ^^^^ parameter[declaration,readonly]
+
+endpackage
+
+
+
+module child #(parameter int W = 1) (input logic [W-1:0] d);
+       ^^^^^ class[declaration,definition]
+                             ^ parameter[declaration]
+                                                  ^ parameter
+                                                         ^ port[declaration]
+
+endmodule
+
+
+
+module top (
+       ^^^ class[declaration,definition]
+
+    input logic [pkg::WIDTH-1:0] data
+                 ^^^ namespace
+                      ^^^^^ parameter[readonly]
+                                 ^^^^ port[declaration]
+
+);
+
+    typedef enum logic [1:0] {LOC_A, LOC_B} loc_e;
+                              ^^^^^ enumMember[declaration]
+                                     ^^^^^ enumMember[declaration]
+                                            ^^^^^ type[declaration]
+
+    logic [pkg::WIDTH-1:0] sig;
+           ^^^ namespace
+                ^^^^^ parameter[readonly]
+                           ^^^ variable[declaration]
+
+    localparam int X = pkg::PBAR;
+                   ^ parameter[declaration,readonly]
+                       ^^^ namespace
+                            ^^^^ parameter[readonly]
+
+    localparam int Y = loc_e::LOC_A;
+                   ^ parameter[declaration,readonly]
+                       ^^^^^ type
+                              ^^^^^ enumMember
+
+    localparam int Z = pkg::MISSING;
+                   ^ parameter[declaration,readonly]
+                       ^^^ namespace
+
+    child #(.W(pkg::WIDTH)) u_child (.d(sig));
+    ^^^^^ class
+             ^ parameter
+               ^^^ namespace
+                    ^^^^^ parameter[readonly]
+                            ^^^^^^^ instance[declaration]
+                                      ^ port
+                                        ^^^ variable
+
+endmodule

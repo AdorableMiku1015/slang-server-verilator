@@ -413,12 +413,27 @@ private:
         return !connection.openParen && connection.name == token;
     }
 
-    /// The token is part of a declaration or instantiation the symbol indexer recorded.
-    std::optional<TokenClass> classifyIndexed(const parsing::Token& token) const {
-        auto symbols = m_symbols.getSymbols(&token);
-        if (symbols.empty())
-            return std::nullopt;
+    /// True for the member of a `::` lookup, like `pkg::MEMBER`, `state_e::IDLE` or
+    /// `pkg::cls::MEMBER`. The enclosing scope does not know those names, since the
+    /// qualifier is the scope they live in.
+    bool isScopedNameMember(const parsing::Token& token) const {
+        // Like isScopeQualifier, the token sits in the name that the ScopedName wraps
+        auto* node = m_syntaxes.getTokenParent(&token);
+        for (int depth = 0; node && depth < 2; depth++, node = node->parent) {
+            if (node->kind != syntax::SyntaxKind::ScopedName)
+                continue;
 
+            auto& scoped = node->as<syntax::ScopedNameSyntax>();
+            if (scoped.separator.kind != parsing::TokenKind::DoubleColon)
+                return false;
+            return scoped.right->getFirstToken() == token;
+        }
+        return false;
+    }
+
+    /// The best classification of a set of symbols, or nothing when none of them classify.
+    template<typename Range>
+    std::optional<TokenClass> classifyBest(const Range& symbols) const {
         std::optional<TokenClass> best;
         for (auto* symbol : symbols) {
             if (!symbol)
@@ -431,7 +446,16 @@ private:
             if (!best || tokenTypePriority(cls->type) < tokenTypePriority(best->type))
                 best = cls;
         }
+        return best;
+    }
 
+    /// The token is part of a declaration or instantiation the symbol indexer recorded.
+    std::optional<TokenClass> classifyIndexed(const parsing::Token& token) const {
+        auto symbols = m_symbols.getSymbols(&token);
+        if (symbols.empty())
+            return std::nullopt;
+
+        auto best = classifyBest(symbols);
         if (!best)
             return std::nullopt;
 
@@ -453,6 +477,13 @@ private:
         auto name = token.valueText();
         if (name.empty())
             return std::nullopt;
+
+        // A qualified name states the scope it comes from, so it may not be visible here at
+        // all; resolving it is what hover and goto do for the same token
+        if (isScopedNameMember(token)) {
+            if (auto cls = classifyBest(m_analysis.getSymbolsAtToken(&token)))
+                return cls;
+        }
 
         if (auto* scope = findEnclosingScope(*parent)) {
             if (auto* symbol = scope->lookupName(name)) {
