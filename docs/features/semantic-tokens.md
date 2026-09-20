@@ -68,9 +68,10 @@ Semantic tokens only cover identifiers. Keywords, comments, strings, and numbers
 coming from the editor's grammar, and semantic tokens are layered on top of it rather than
 replacing it.
 
-A name that is qualified by a scope is resolved through the qualifier, the same way hovers
-and gotos resolve it: `pkg::MEMBER`, `state_e::IDLE` and `cls::field` are colored without
-an import of the package, and the qualifier itself is reported as a namespace.
+A name that selects a member is resolved through what it selects, the same way hovers and
+gotos resolve it, so `pkg::MEMBER`, `state_e::IDLE`, `cls::field`, `sig.field`,
+`arr[0].field` and `ifc.sig` are colored even though the member is not visible in the
+enclosing scope. The qualifier of a `::` name is reported as a namespace.
 
 There are a few cases where no token is reported:
 
@@ -82,9 +83,9 @@ There are a few cases where no token is reported:
   skipped, as they have no text in the document.
 - **Escaped identifiers.** For `\foo ` the highlighted range covers the name only, leaving
   out the leading backslash and the trailing space.
-- **Qualified names that do not resolve.** A member of a `::` lookup is colored when the
-  lookup succeeds; members that need an elaborated design to resolve are left to the
-  grammar, exactly as they are in a hover.
+- **Members that do not resolve.** A member is colored when its lookup succeeds; members
+  that need an elaborated design to resolve are left to the grammar, exactly as they are in
+  a hover.
 
 Note that a token is classified from the syntax and the symbol index of the current
 document, so highlighting still works when a design is not set: a port connection is

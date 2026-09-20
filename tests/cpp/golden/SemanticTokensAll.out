@@ -666,6 +666,7 @@ macromodule m3;
     defparam m3.m.i = 1:1:1;
              ^^ class
                 ^ instance
+                  ^ parameter
 
 
 
@@ -743,6 +744,7 @@ endprimitive
 
 (* attr = 3.14 *) bind m3.m m1 #(1) bound('x, , , );
                        ^^ class
+                          ^ instance
                             ^^ class
                                     ^^^^^ instance[declaration]
 
@@ -854,18 +856,22 @@ endinterface
 module n(Iface.m a);
        ^ class[declaration,definition]
          ^^^^^ interface
+               ^ modport
                  ^ port[declaration]
 
     initial begin
 
         a.foo(42, 3.14);
         ^ port
+          ^^^ function
 
         a.bar(1, 1);
         ^ port
+          ^^^ function
 
         a.baz();
         ^ port
+          ^^^ function
 
     end
 
@@ -873,17 +879,21 @@ module n(Iface.m a);
 
     function void a.bar(int i, logic l); endfunction
                   ^ port
+                    ^^^ function
 
     task a.baz; endtask
          ^ port
+           ^^^ function
 
     function void a.func(int i); endfunction
                   ^ port
+                    ^^^^ function
 
 
 
     function void a.foo(int i, real r);
                   ^ port
+                    ^^^ function
 
     endfunction
 
@@ -913,6 +923,7 @@ module m4;
     ^ class
       ^^ instance[declaration]
          ^^ instance
+            ^ modport
 
 
 
@@ -921,6 +932,7 @@ module m4;
 
     task i1.t2;
          ^^ instance
+            ^^ function
 
         static int i = baz;
                        ^^^ parameter[readonly]
@@ -931,6 +943,7 @@ module m4;
 
     task i2.t2;
          ^^ instance
+            ^^ function
 
         static int i = baz;
                        ^^^ parameter[readonly]
@@ -1298,6 +1311,7 @@ module m7;
     int i = g2.foo();
         ^ variable[declaration]
             ^^ variable
+               ^^^ function
 
     real r = D::foo();
          ^ variable[declaration]
@@ -1457,11 +1471,13 @@ module m6;
     integer i = b1.f();
             ^ variable[declaration]
                 ^^ variable
+                   ^ function
 
     initial begin
 
         b2.f();
         ^^ variable
+           ^ function
 
         a = b2;
         ^ variable
@@ -1469,8 +1485,9 @@ module m6;
 
         c.i = c.j;
         ^ variable
-          ^ variable
+          ^ property
               ^ variable
+                ^ property
 
 
 
@@ -1560,6 +1577,7 @@ class C3;
 
             option.weight = 2;
             ^^^^^^ property
+                   ^^^^^^ property
 
             wildcard bins a = { [0:63],65 };
 
@@ -1587,6 +1605,7 @@ class C3;
 
             option.weight = c;
             ^^^^^^ property
+                   ^^^^^^ property
                             ^ property
 
             bins one = '{ '{1,2}, '{3,4}, '{5,6} };
@@ -1660,10 +1679,15 @@ module m10;
 
         {<< byte{ p.header, p.len, p.payload with [0 +: p.len], p.crc }} = stream;
                   ^ variable
+                    ^^^^^^ property
                             ^ variable
+                              ^^^ property
                                    ^ variable
+                                     ^^^^^^^ property
                                                         ^ variable
+                                                          ^^^ property
                                                                 ^ variable
+                                                                  ^^^ property
                                                                            ^^^^^^ variable
 
         stream = stream[ $bits(p) / 8 : $ ];

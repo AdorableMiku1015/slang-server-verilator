@@ -677,6 +677,75 @@ endmodule
     scanner.scanDocument(doc);
 }
 
+TEST_CASE("SemanticTokensMemberReferences") {
+    ServerHarness server("");
+    // A member of a value is not visible in the enclosing scope either, so it is resolved
+    // through the receiver, the same way hover and goto resolve it
+    auto doc = server.openFile("semantic_members.sv", R"(
+package pkg;
+    typedef struct packed {
+        logic [7:0] bar;
+    } packed_struct_type_t;
+endpackage
+
+interface bus_if;
+    logic req;
+endinterface
+
+module leaf;
+    logic [7:0] data;
+endmodule
+
+module top (
+    bus_if bus
+);
+    import pkg::*;
+
+    packed_struct_type_t foo;
+    packed_struct_type_t [1:0] foo_arr;
+    leaf u_leaf ();
+    logic [7:0] x;
+
+    always_comb begin
+        x = foo.bar;
+        x = foo_arr[0].bar;
+        x = bus.req;
+        x = u_leaf.data;
+    end
+endmodule
+)");
+
+    auto check = [&](std::string_view name, size_t occurrence, SemanticTokenType expected) {
+        auto token = findNamedToken(doc, name, occurrence);
+        if (!token)
+            FAIL("no semantic token for " << name << " occurrence " << occurrence);
+        else {
+            CHECK(token->type == expected);
+            CHECK(!hasModifier(*token, SemanticTokenModifier::Declaration));
+        }
+    };
+
+    // Struct members, through a variable and through an element of an array of them
+    auto declaration = findNamedToken(doc, "bar");
+    REQUIRE(declaration.has_value());
+    CHECK(declaration->type == SemanticTokenType::Property);
+    CHECK(hasModifier(*declaration, SemanticTokenModifier::Declaration));
+    check("bar", 1, SemanticTokenType::Property);
+    check("bar", 2, SemanticTokenType::Property);
+
+    // Interface members and hierarchical references
+    check("req", 1, SemanticTokenType::Variable);
+    check("data", 1, SemanticTokenType::Variable);
+
+    // The receivers keep their own type
+    check("foo", 1, SemanticTokenType::Variable);
+    check("bus", 1, SemanticTokenType::Port);
+    check("u_leaf", 1, SemanticTokenType::Instance);
+
+    SemanticTokenScanner scanner;
+    scanner.scanDocument(doc);
+}
+
 TEST_CASE("SemanticTokensAll") {
     /// Semantic tokens on the comprehensive all.sv test file
     ServerHarness server("");

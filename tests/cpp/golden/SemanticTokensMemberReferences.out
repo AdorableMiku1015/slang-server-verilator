@@ -1,0 +1,94 @@
+
+
+
+package pkg;
+        ^^^ namespace[declaration]
+
+    typedef struct packed {
+
+        logic [7:0] bar;
+                    ^^^ property[declaration]
+
+    } packed_struct_type_t;
+      ^^^^^^^^^^^^^^^^^^^^ type[declaration]
+
+endpackage
+
+
+
+interface bus_if;
+          ^^^^^^ interface[declaration,definition]
+
+    logic req;
+          ^^^ variable[declaration]
+
+endinterface
+
+
+
+module leaf;
+       ^^^^ class[declaration,definition]
+
+    logic [7:0] data;
+                ^^^^ variable[declaration]
+
+endmodule
+
+
+
+module top (
+       ^^^ class[declaration,definition]
+
+    bus_if bus
+    ^^^^^^ interface
+           ^^^ port[declaration]
+
+);
+
+    import pkg::*;
+           ^^^ namespace
+
+
+
+    packed_struct_type_t foo;
+    ^^^^^^^^^^^^^^^^^^^^ type
+                         ^^^ variable[declaration]
+
+    packed_struct_type_t [1:0] foo_arr;
+    ^^^^^^^^^^^^^^^^^^^^ type
+                               ^^^^^^^ variable[declaration]
+
+    leaf u_leaf ();
+    ^^^^ class
+         ^^^^^^ instance[declaration]
+
+    logic [7:0] x;
+                ^ variable[declaration]
+
+
+
+    always_comb begin
+
+        x = foo.bar;
+        ^ variable
+            ^^^ variable
+                ^^^ property
+
+        x = foo_arr[0].bar;
+        ^ variable
+            ^^^^^^^ variable
+                       ^^^ property
+
+        x = bus.req;
+        ^ variable
+            ^^^ port
+                ^^^ variable
+
+        x = u_leaf.data;
+        ^ variable
+            ^^^^^^ instance
+                   ^^^^ variable
+
+    end
+
+endmodule
