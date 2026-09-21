@@ -26,6 +26,44 @@ TEST_CASE("URI EmptyInput") {
 #endif
 }
 
+TEST_CASE("URI LongInput") {
+    // Long URIs used to kill the server before it could answer: the greedy quantifiers in the
+    // RFC 3986 pattern made ctre recurse once per input character, so a deep enough path
+    // overflowed the stack while a message was being deserialized. These are the shapes VS Code
+    // sends for documents in deeply nested or percent encoded directories.
+    const std::string filler(6000, 'd');
+
+    SECTION("Path") {
+        const std::string text = "file:///C:/" + filler + "/deep/file.sv";
+        URI u(text);
+
+        CHECK(u.str() == text);
+#ifdef _WIN32
+        CHECK(u.getPath() == "C:\\" + filler + "\\deep\\file.sv");
+#else
+        CHECK(u.getPath() == "/C:/" + filler + "/deep/file.sv");
+#endif
+    }
+
+    SECTION("PercentEncoded") {
+        // "%E4%B8%AD%E6%96%87" is UTF-8 for 中文, so a non-ascii path inflates the URI length
+        const std::string decoded = "\xE4\xB8\xAD\xE6\x96\x87";
+        URI u("file:///C:/" + filler + "/%E4%B8%AD%E6%96%87.sv");
+
+        CHECK(u.getPath().ends_with(decoded + ".sv"));
+    }
+
+    SECTION("QueryAndFragment") {
+        URI u("file:///C:/" + filler + "?q=" + filler + "#" + filler);
+        URI withoutQueryOrFragment("file:///C:/" + filler);
+
+        // Query and fragment are split off the path
+        CHECK(u.getPath().find('?') == std::string_view::npos);
+        CHECK(u.getPath().find('#') == std::string_view::npos);
+        CHECK(u.getPath().size() == withoutQueryOrFragment.getPath().size());
+    }
+}
+
 #ifdef _WIN32
 
 TEST_CASE("URI WindowsDriveLetter") {

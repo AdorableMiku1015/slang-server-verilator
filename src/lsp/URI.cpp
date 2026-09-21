@@ -9,8 +9,15 @@
 
 // Pattern from RFC 3986
 // https://www.rfc-editor.org/rfc/rfc3986#appendix-B
+//
+// The quantifiers are possessive so that ctre matches them iteratively; with greedy
+// quantifiers ctre recursed once per input character, so a long enough URI (deeply nested
+// paths, percent encoded paths, remote URIs) overflowed the stack and killed the server
+// while it was deserializing a message. Every quantified class excludes exactly the
+// delimiter that the next element matches, so giving up backtracking cannot change the
+// result. See hudson-trading/slang-server#525.
 static constexpr auto uriPattern = ctll::fixed_string{
-    R"(^(([^:/?#]+):)?(//([^/?#]*))?([^?#]*)(\?([^#]*))?(#(.*))?$)"};
+    R"(^(([^:/?#]++):)?(//([^/?#]*+))?([^?#]*+)(\?([^#]*+))?(#(.*+))?$)"};
 
 URI::URI(const std::string& input) {
 
