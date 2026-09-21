@@ -19,6 +19,21 @@ Run `cmake -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=1  -DCMAKE_BUILD_TYPE=DEBUG`
 
 Run `cmake --build build -j --target slang_server` to build `build/bin/slang-server`
 
+### Incremental builds with a non-English MSVC
+
+CMake's Ninja dependency scanner recognizes includes by parsing the localized `/showIncludes`
+output. A non-English MSVC (for example a Chinese Visual Studio) prints `注意: 包含文件:` instead
+of `Note: including file:`, so the scanner records no header dependencies at all. Editing a header
+then silently reuses objects that were compiled against the previous layout, and the linked binary
+mixes incompatible objects, which crashes in places that have nothing to do with the change.
+
+Set `VSLANG=1033` to force English diagnostics, or do a clean rebuild after changing a header:
+
+```bash
+set VSLANG=1033
+cmake --build build/win64-release -j
+```
+
 ## Cpp Testing
 
 ```bash
