@@ -11,6 +11,7 @@
 #include "document/ShallowAnalysis.h"
 #include "document/SymbolIndexer.h"
 #include "document/SyntaxIndexer.h"
+#include "util/Converters.h"
 #include "util/Logging.h"
 #include <algorithm>
 #include <iterator>
@@ -90,37 +91,6 @@ int tokenTypePriority(SemanticTokenType type) {
         default:
             return 12;
     }
-}
-
-/// LSP positions are counted in UTF-16 code units, so multi byte characters need to be
-/// measured individually. A four byte sequence is a surrogate pair, which is two units.
-uint32_t utf16Length(std::string_view text) {
-    uint32_t count = 0;
-    for (size_t i = 0; i < text.size();) {
-        auto byte = static_cast<unsigned char>(text[i]);
-        if (byte < 0x80) {
-            i += 1;
-            count += 1;
-        }
-        else if ((byte & 0xE0) == 0xC0) {
-            i += std::min<size_t>(2, text.size() - i);
-            count += 1;
-        }
-        else if ((byte & 0xF0) == 0xE0) {
-            i += std::min<size_t>(3, text.size() - i);
-            count += 1;
-        }
-        else if ((byte & 0xF8) == 0xF0) {
-            i += std::min<size_t>(4, text.size() - i);
-            count += 2;
-        }
-        else {
-            // Invalid byte; treat it as a single unit so we always make progress
-            i += 1;
-            count += 1;
-        }
-    }
-    return count;
 }
 
 bool positionLess(const lsp::Position& left, const lsp::Position& right) {

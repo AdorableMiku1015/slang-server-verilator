@@ -166,15 +166,34 @@ void SlangDoc::onChange(const std::vector<lsp::TextDocumentContentChangeEvent>& 
     auto getOffsets = [&](lsp::Range range) {
         // Only one thread is able to call onchange, so the offsets remain valid without locking
         SourceManager::computeLineOffsets(textView, lineOffsets);
-        auto& start = range.start;
-        auto& end = range.end;
-        if (start.line >= lineOffsets.size() || end.line >= lineOffsets.size()) {
-            throw std::runtime_error(fmt::format("Range out of bounds: {},{} / {}", start.line,
-                                                 end.line, lineOffsets.size()));
-        }
-        auto startOffset = lineOffsets[start.line] + start.character;
-        auto endOffset = lineOffsets[end.line] + end.character;
-        return std::make_pair(startOffset, endOffset);
+
+        // LSP positions point at a line and a UTF-16 column, but the buffer is UTF-8 bytes.
+        auto getOffset = [&](const lsp::Position& pos, std::string_view which) {
+            if (pos.line >= lineOffsets.size()) {
+                throw std::runtime_error(fmt::format("{} line out of bounds: {} / {}", which,
+                                                     pos.line, lineOffsets.size()));
+            }
+
+            auto lineStart = lineOffsets[pos.line];
+            auto lineEnd = pos.line + 1 < lineOffsets.size() ? lineOffsets[pos.line + 1]
+                                                             : textView.size();
+            // Line offsets point past the line terminator, which is not part of the line
+            while (lineEnd > lineStart &&
+                   (textView[lineEnd - 1] == '\n' || textView[lineEnd - 1] == '\r')) {
+                lineEnd--;
+            }
+
+            // Rejecting bad positions keeps a stale client from corrupting the buffer
+            auto column = utf16ToByteOffset(textView.substr(lineStart, lineEnd - lineStart),
+                                            pos.character);
+            if (!column) {
+                throw std::runtime_error(fmt::format("{} column out of bounds: {} on line {}",
+                                                     which, pos.character, pos.line));
+            }
+            return lineStart + *column;
+        };
+
+        return std::make_pair(getOffset(range.start, "Start"), getOffset(range.end, "End"));
     };
 
     auto ensureNullTerminated = [&]() {

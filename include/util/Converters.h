@@ -8,6 +8,7 @@
 #pragma once
 
 #include "lsp/LspTypes.h"
+#include <cstdint>
 #include <optional>
 #include <string_view>
 
@@ -23,6 +24,14 @@ using namespace slang;
 
 std::optional<const parsing::Token> findNameToken(const syntax::SyntaxNode* node,
                                                   std::string_view name);
+
+/// LSP positions are counted in UTF-16 code units, so multi byte characters need to be
+/// measured individually. A four byte sequence is a surrogate pair, which is two units.
+uint32_t utf16Length(std::string_view text);
+
+/// Byte offset within `line` (which must not include a line terminator) of the given UTF-16
+/// column. Returns nullopt if the column is past the end of the line.
+std::optional<size_t> utf16ToByteOffset(std::string_view line, uint32_t column);
 
 lsp::Position toPosition(const SourceLocation& loc, const SourceManager& sourceManager);
 

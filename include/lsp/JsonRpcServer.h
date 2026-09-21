@@ -353,25 +353,47 @@ protected:
         std::lock_guard<std::mutex> lock(serverStateMutex);
         auto result = processMessage(request, ctx, logStart);
         unregisterContext(request, ctx);
-        std::visit(
-            [request](auto&& value) {
-                using T = std::decay_t<decltype(value)>;
-                if constexpr (std::is_same_v<T, rfl::Generic>) {
-                    sendMessage(RpcResponse{
-                        .jsonrpc = "2.0",
-                        .id = request.id,
-                        .result = value,
-                    });
-                }
-                else if constexpr (std::is_same_v<T, RpcError>) {
-                    sendMessage(RpcErrorResponse{
-                        .jsonrpc = "2.0",
-                        .id = request.id,
-                        .error = value,
-                    });
-                }
-            },
-            result);
+        try {
+            std::visit(
+                [request](auto&& value) {
+                    using T = std::decay_t<decltype(value)>;
+                    if constexpr (std::is_same_v<T, rfl::Generic>) {
+                        sendMessage(RpcResponse{
+                            .jsonrpc = "2.0",
+                            .id = request.id,
+                            .result = value,
+                        });
+                    }
+                    else if constexpr (std::is_same_v<T, RpcError>) {
+                        sendMessage(RpcErrorResponse{
+                            .jsonrpc = "2.0",
+                            .id = request.id,
+                            .error = value,
+                        });
+                    }
+                },
+                result);
+        }
+        catch (const std::exception& e) {
+            // A result that can't be serialized (invalid UTF-8 from a source file, for example)
+            // must not leave the client waiting for a response that will never come
+            server::logging::error("Failed to serialize the response to {}: {}", request.method,
+                                   e.what());
+            try {
+                sendMessage(RpcErrorResponse{
+                    .jsonrpc = "2.0",
+                    .id = request.id,
+                    .error =
+                        RpcError{
+                            .code = static_cast<int>(ErrorCodes::InternalError),
+                            .message = "Failed to serialize the response",
+                        },
+                });
+            }
+            catch (...) {
+                server::logging::error("Failed to report the serialization failure to the client");
+            }
+        }
     }
 
     // Protects server state by serializing LSP and WCP handler execution.
