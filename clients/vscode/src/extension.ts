@@ -272,6 +272,26 @@ File input is sent to stdin, and formatted output is read from stdout.',
       )
     )
 
+    // The server keeps going after a failure and logs the details, so make sure that failure does
+    // not pass silently
+    this.context.subscriptions.push(
+      this.client.onNotification(
+        'slang/internalError',
+        async (params: slang.InternalErrorParams) => {
+          this.logger.warn(`Internal error in ${params.method}: ${params.message}`)
+          const show = 'Show Output'
+          const resp = await vscode.window.showWarningMessage(
+            `slang-server hit an internal error while handling ${params.method}: ` +
+              `${params.message}. More details are in the Slang Server output.`,
+            show
+          )
+          if (resp === show) {
+            await this.showOutput.func()
+          }
+        }
+      )
+    )
+
     this.client.registerFeature(this.inactiveRegions)
     this.inactiveRegions.register(this.client)
 

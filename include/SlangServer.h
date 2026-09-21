@@ -17,6 +17,7 @@
 #include "document/SlangDoc.h"
 #include "lsp/LspServer.h"
 #include "lsp/LspTypes.h"
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <rfl.hpp>
@@ -78,6 +79,10 @@ protected:
 
     // The waveform viewer client
     std::optional<waves::WcpClient> m_wcpClient = std::nullopt;
+
+    /// When the user was last told about a swallowed internal error, so that a burst of failures
+    /// cannot turn into a burst of notifications
+    std::chrono::steady_clock::time_point m_lastInternalErrorNotice{};
 
 public:
     SlangServer(SlangLspClient& client);
@@ -249,6 +254,10 @@ public:
     /// Semantic tokens for a range of the document
     std::optional<lsp::SemanticTokens> getDocSemanticTokensRange(
         const lsp::SemanticTokensRangeParams&, lsp::RequestContext ctx = {}) override;
+
+    /// Called when a handler failed but the server carried on: the user is told once in a while so
+    /// a swallowed failure does not go unnoticed, since the details only go to the log.
+    void onInternalError(std::string_view method, std::string_view message);
 
     ////////////////////////////////////////////////
     /// Cone tracing

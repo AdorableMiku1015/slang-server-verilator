@@ -115,6 +115,11 @@ public:
         lsp::sendNotification("slang/activeInstanceChanged", rfl::to_generic(params));
     }
 
+    /// Reports a failure the server recovered from, so the client can tell the user about it
+    virtual void onInternalError(const lsp::InternalErrorParams& params) {
+        lsp::sendNotification("slang/internalError", rfl::to_generic(params));
+    }
+
     lsp::Command makeActivateInstanceCommand(std::string title, std::string tooltip,
                                              std::string_view instance,
                                              InteractionSource source) const {

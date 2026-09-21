@@ -8,6 +8,19 @@
 
 #include "slang/util/VersionInfo.h"
 
+TEST_CASE("Internal errors are surfaced to the user at most once in a while") {
+    ServerHarness server("repo1");
+
+    // The failure itself is always logged; the notification exists so that a swallowed failure
+    // does not go unnoticed, and it is rate limited so a burst of them stays readable
+    server.onInternalError("textDocument/completion", "boom");
+    server.onInternalError("textDocument/hover", "boom again");
+
+    REQUIRE(server.client.m_internalErrors.size() == 1);
+    CHECK(server.client.m_internalErrors[0].method == "textDocument/completion");
+    CHECK(server.client.m_internalErrors[0].message == "boom");
+}
+
 TEST_CASE("Initialize accepts a compatible editor extension") {
     auto paramsJson = std::string(R"(
 {

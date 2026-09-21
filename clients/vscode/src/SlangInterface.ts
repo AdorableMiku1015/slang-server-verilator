@@ -115,6 +115,12 @@ export interface ActivateInstanceParams {
   interactionSource: InteractionSource
 }
 
+/// Reported when the server swallowed a failure; the details are in the server log
+export interface InternalErrorParams {
+  method: string
+  message: string
+}
+
 export interface ScopeStep {
   path: string
   children: Item[]

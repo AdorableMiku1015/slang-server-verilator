@@ -18,6 +18,8 @@ public:
     TestJsonRpcServer() {
         registerMethod<std::nullopt_t, int, &TestJsonRpcServer::succeedRequest>("success");
         registerMethod<std::nullopt_t, int, &TestJsonRpcServer::failRequest>("fail");
+        registerMethod<std::nullopt_t, int, &TestJsonRpcServer::throwNonStandardRequest>(
+            "throw-non-standard");
         registerMethod<std::nullopt_t, int, &TestJsonRpcServer::contextRequest>("context");
         registerMethod<std::nullopt_t, std::monostate, &TestJsonRpcServer::contextVoidRequest>(
             "context-void");
@@ -36,6 +38,22 @@ public:
     int succeedRequest(std::monostate) { return 42; }
 
     int failRequest(std::monostate) { throw std::runtime_error("failed"); }
+
+    /// An exception that is not derived from std::exception, which used to escape the handler, the
+    /// worker thread and the process itself
+    int throwNonStandardRequest(std::monostate) { throw 42; }
+
+    struct ReportedError {
+        std::string method;
+        std::string message;
+    };
+
+    /// Failures the server swallowed and told the implementation about
+    std::vector<ReportedError> internalErrors;
+
+    void onInternalError(std::string_view method, std::string_view message) {
+        internalErrors.push_back(ReportedError{std::string(method), std::string(message)});
+    }
 
     int contextRequest(std::monostate, const lsp::RequestContext& ctx) {
         contextRequestCalls++;
@@ -440,5 +458,42 @@ TEST_CASE("JSON-RPC messages log their latency") {
         server.untrack(first, firstContext);
         server.untrack(second, secondContext);
         server.untrack(other, otherContext);
+    }
+}
+
+TEST_CASE("Failures the server swallows are reported to the implementation") {
+    TestJsonRpcServer server;
+    LogCapture capture;
+
+    SECTION("standard exception") {
+        auto result = server.processMessage({
+            .jsonrpc = "2.0",
+            .id = 7,
+            .method = "fail",
+            .params = std::nullopt,
+        });
+
+        REQUIRE(std::holds_alternative<lsp::RpcError>(result));
+        CHECK(std::get<lsp::RpcError>(result).message == "failed");
+        REQUIRE(server.internalErrors.size() == 1);
+        CHECK(server.internalErrors[0].method == "fail");
+        CHECK(server.internalErrors[0].message == "failed");
+    }
+
+    SECTION("exception that is not a std::exception") {
+        // This used to escape the handler and the worker thread, killing the process with nothing
+        // in the log to say why
+        auto result = server.processMessage({
+            .jsonrpc = "2.0",
+            .id = 8,
+            .method = "throw-non-standard",
+            .params = std::nullopt,
+        });
+
+        REQUIRE(std::holds_alternative<lsp::RpcError>(result));
+        CHECK(std::get<lsp::RpcError>(result).message == "Unknown exception");
+        REQUIRE(server.internalErrors.size() == 1);
+        CHECK(server.internalErrors[0].method == "throw-non-standard");
+        CHECK(server.internalErrors[0].message == "unknown exception");
     }
 }

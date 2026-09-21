@@ -206,6 +206,25 @@ protected:
         ctx.info("Started {}", ctx.method());
     }
 
+    /// Hook for the implementation: called when a handler failed but the server carried on, so the
+    /// user can be pointed at the log. Does nothing by default; `Impl` may define its own.
+    void onInternalError(std::string_view method, std::string_view message) {
+        (void)method;
+        (void)message;
+    }
+
+    /// Failure was already logged by the caller; this only tells the implementation about it.
+    /// Callers must hold serverStateMutex, since the notification is written to the same stream as
+    /// responses.
+    void notifyInternalError(std::string_view method, std::string_view message) {
+        try {
+            static_cast<Impl*>(this)->onInternalError(method, message);
+        }
+        catch (...) {
+            // Reporting that something went wrong must never go wrong itself
+        }
+    }
+
     std::variant<rfl::Generic, RpcError, std::nullopt_t> processMessage(RpcRequest request,
                                                                         RequestContext ctx = {},
                                                                         bool logStart = true) {
@@ -270,9 +289,11 @@ protected:
                 }
                 catch (const std::exception& e) {
                     messageLog.setError(e.what());
+                    notifyInternalError(request.method, e.what());
                 }
                 catch (...) {
                     messageLog.setError("unknown exception");
+                    notifyInternalError(request.method, "unknown exception");
                 }
             }
             else if (request.method.starts_with("$/")) {
@@ -310,11 +331,13 @@ protected:
         }
         catch (const std::exception& e) {
             messageLog.setError(e.what());
+            notifyInternalError(request.method, e.what());
             return RpcError{.code = static_cast<int>(ErrorCodes::InternalError),
                             .message = e.what()};
         }
         catch (...) {
             messageLog.setError("unknown exception");
+            notifyInternalError(request.method, "unknown exception");
             return RpcError{.code = static_cast<int>(ErrorCodes::InternalError),
                             .message = "Unknown exception"};
         }
@@ -428,11 +451,15 @@ public:
                     handleMessage(std::move(message.request), std::move(message.ctx), false);
                 }
                 catch (const std::exception& e) {
+                    std::lock_guard lock(serverStateMutex);
                     server::logging::error("Uncaught exception while handling {}: {}", method,
                                            e.what());
+                    notifyInternalError(method, e.what());
                 }
                 catch (...) {
+                    std::lock_guard lock(serverStateMutex);
                     server::logging::error("Uncaught exception while handling {}", method);
+                    notifyInternalError(method, "unknown exception");
                 }
                 {
                     std::lock_guard lock(queueMutex);
@@ -514,11 +541,15 @@ public:
                     enqueue(std::move(*request));
             }
             catch (const std::exception& e) {
+                std::lock_guard lock(serverStateMutex);
                 server::logging::error("Uncaught exception while queueing a message: {}", e.what());
+                notifyInternalError("incoming message", e.what());
                 continue;
             }
             catch (...) {
+                std::lock_guard lock(serverStateMutex);
                 server::logging::error("Uncaught exception while queueing a message");
+                notifyInternalError("incoming message", "unknown exception");
                 continue;
             }
 
@@ -528,24 +559,34 @@ public:
 
         // Shutdown loop
         if (shutdown) {
-            while (auto request = readJson<RpcRequest>(inputLine, inputContent)) {
-                if (request->method == "exit")
-                    break;
+            // Anything that escapes here would skip the join below, and a joinable std::thread
+            // destroyed during unwinding terminates the process
+            try {
+                while (auto request = readJson<RpcRequest>(inputLine, inputContent)) {
+                    if (request->method == "exit")
+                        break;
 
-                if (request->method == "$/cancelRequest") {
-                    handleCancelRequest(std::move(*request));
+                    if (request->method == "$/cancelRequest") {
+                        handleCancelRequest(std::move(*request));
+                    }
+                    else {
+                        sendMessage(RpcErrorResponse{
+                            .jsonrpc = "2.0",
+                            .id = request->id,
+                            .error =
+                                RpcError{
+                                    .code = static_cast<int>(ErrorCodes::InvalidRequest),
+                                    .message = "Invalid Request",
+                                },
+                        });
+                    }
                 }
-                else {
-                    sendMessage(RpcErrorResponse{
-                        .jsonrpc = "2.0",
-                        .id = request->id,
-                        .error =
-                            RpcError{
-                                .code = static_cast<int>(ErrorCodes::InvalidRequest),
-                                .message = "Invalid Request",
-                            },
-                    });
-                }
+            }
+            catch (const std::exception& e) {
+                server::logging::error("Uncaught exception during shutdown: {}", e.what());
+            }
+            catch (...) {
+                server::logging::error("Uncaught exception during shutdown");
             }
         }
 

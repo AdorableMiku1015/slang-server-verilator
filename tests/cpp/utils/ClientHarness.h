@@ -86,6 +86,14 @@ public:
         m_activeInstanceChanges.push_back(params);
     }
 
+    /// Internal errors the server chose to surface; these are expected in some tests and so do not
+    /// fail the test the way unhandled errors and warnings do
+    std::vector<lsp::InternalErrorParams> m_internalErrors;
+
+    void onInternalError(const lsp::InternalErrorParams& params) override {
+        m_internalErrors.push_back(params);
+    }
+
 private:
     void expectMessage(std::vector<std::string>& messages, std::string_view kind,
                        const std::string& msg) {

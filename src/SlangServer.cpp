@@ -922,6 +922,19 @@ std::optional<lsp::SemanticTokens> SlangServer::getDocSemanticTokensRange(
     return m_driver->getDocSemanticTokens(params.textDocument.uri, params.range, ctx);
 }
 
+void SlangServer::onInternalError(std::string_view method, std::string_view message) {
+    // The failure is already in the log; this is only about not letting it pass silently. Never
+    // send more than one of these every few minutes, so a burst of failures stays readable.
+    const auto now = std::chrono::steady_clock::now();
+    if (now - m_lastInternalErrorNotice < std::chrono::minutes(5)) {
+        return;
+    }
+    m_lastInternalErrorNotice = now;
+
+    m_client.onInternalError(
+        lsp::InternalErrorParams{.method = std::string(method), .message = std::string(message)});
+}
+
 std::monostate SlangServer::onShutdown(const std::nullopt_t&) {
     INFO("Server shutting down");
     return std::monostate{};
