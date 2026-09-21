@@ -33,9 +33,13 @@ public:
             "$/cancelRequest");
         registerNotification<lsp::DidChangeTextDocumentParams,
                              &TestJsonRpcServer::didChangeNotification>("textDocument/didChange");
+        registerMethod<std::nullopt_t, std::string, &TestJsonRpcServer::badUtf8Request>("bad-utf8");
     }
 
     int succeedRequest(std::monostate) { return 42; }
+
+    /// A result that JSON cannot represent, like source text that isn't UTF-8
+    std::string badUtf8Request(std::monostate) { return std::string("\xb2\xe2\xca\xd4"); }
 
     int failRequest(std::monostate) { throw std::runtime_error("failed"); }
 
@@ -95,6 +99,7 @@ public:
 
     int contextRequestCalls = 0;
 
+    using JsonRpcServer::handleMessage;
     using JsonRpcServer::processMessage;
 };
 
@@ -496,4 +501,26 @@ TEST_CASE("Failures the server swallows are reported to the implementation") {
         CHECK(server.internalErrors[0].method == "throw-non-standard");
         CHECK(server.internalErrors[0].message == "unknown exception");
     }
+}
+
+TEST_CASE("Results that cannot be serialized still answer the client") {
+    TestJsonRpcServer server;
+    LogCapture capture;
+
+    // Invalid UTF-8 (GBK here) reaches responses through source files, and writing it used to
+    // throw before anything was sent, leaving the client waiting for a response forever
+    std::stringstream responses;
+    auto* original = std::cout.rdbuf(responses.rdbuf());
+    auto restore = slang::ScopeGuard([&] { std::cout.rdbuf(original); });
+
+    server.handleMessage(lsp::RpcRequest{
+        .jsonrpc = "2.0",
+        .id = 3,
+        .method = "bad-utf8",
+        .params = std::nullopt,
+    });
+
+    CHECK(responses.str().find(R"("id":3)") != std::string::npos);
+    CHECK(responses.str().find("Failed to serialize the response") != std::string::npos);
+    CHECK(capture.str().find("Failed to serialize the response to bad-utf8") != std::string::npos);
 }

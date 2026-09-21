@@ -2024,3 +2024,36 @@ TEST_CASE("Resolve Completion Item Missing Optional Kind") {
     CHECK(resolved.label == "no_kind");
     CHECK(!resolved.documentation.has_value());
 }
+
+TEST_CASE("InstantiationCompletionOnMultiByteLine") {
+    ServerHarness server("repo1");
+
+    auto doc = server.openFile("utf8_instantiation.sv", R"(
+    module utf8_instantiation;
+        // 例化 Dut 模块：中文注释
+        Dut
+    endmodule
+    )");
+    doc.save();
+
+    // Insert the instantiation the way a client does, from the resolved textEdit
+    auto cursor = doc.after("        Dut");
+    auto items = cursor.getCompletions();
+    auto it = std::find_if(items.begin(), items.end(),
+                           [](const CompletionHandle& item) { return item.m_item.label == "Dut"; });
+    REQUIRE(it != items.end());
+
+    it->resolve();
+    REQUIRE(it->m_item.insertTextFormat == lsp::InsertTextFormat::Snippet);
+    it->insert();
+    doc.save();
+
+    // The server's buffer has to match what the client ended up with, byte for byte
+    CHECK(doc.doc->textMatches(doc.getText()));
+
+    auto serverText = doc.doc->getText();
+    serverText.remove_suffix(1);
+    CHECK(serverText == doc.getText());
+    CHECK(serverText.find("// 例化 Dut 模块：中文注释") != std::string::npos);
+    CHECK(serverText.find("Dut #(") != std::string::npos);
+}

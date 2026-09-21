@@ -21,18 +21,26 @@ Run `cmake --build build -j --target slang_server` to build `build/bin/slang-ser
 
 ### Incremental builds with a non-English MSVC
 
-CMake's Ninja dependency scanner recognizes includes by parsing the localized `/showIncludes`
-output. A non-English MSVC (for example a Chinese Visual Studio) prints `注意: 包含文件:` instead
-of `Note: including file:`, so the scanner records no header dependencies at all. Editing a header
-then silently reuses objects that were compiled against the previous layout, and the linked binary
-mixes incompatible objects, which crashes in places that have nothing to do with the change.
+CMake's Ninja generator parses the localized `/showIncludes` output to record header dependencies,
+and it stores the localized prefix it saw at configure time (`msvc_deps_prefix` in
+`CMakeFiles/rules.ninja`). If the bytes a build actually produces no longer match that prefix (a
+different console code page than the one used when configuring, or a build directory configured by
+a different toolchain), the prefix never matches. No header dependencies are recorded, the scanner
+finds no work to do after a header edit, and the linked binary mixes objects compiled against
+different layouts. That crashes in places that have nothing to do with the change — a very
+confusing failure mode.
 
-Set `VSLANG=1033` to force English diagnostics, or do a clean rebuild after changing a header:
+`VSLANG=1033` does *not* change these messages on recent MSVC, so do not rely on it. If a header
+edit does not cause rebuilds, delete the build directory and configure it again:
 
 ```bash
-set VSLANG=1033
+rm -rf build/win64-release
+cmake --preset win64-release
 cmake --build build/win64-release -j
 ```
+
+A quick check that header dependencies are being tracked: `ninja -C build/win64-release -n` after
+touching a widely included header should list the objects that include it.
 
 ## Cpp Testing
 

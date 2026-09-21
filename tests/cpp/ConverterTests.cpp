@@ -57,3 +57,52 @@ TEST_CASE("LSP positions resolve macro locations") {
     CHECK(lengthRange.end.line == 1);
     CHECK(lengthRange.end.character == 7);
 }
+
+TEST_CASE("LSP positions count UTF-16 code units") {
+    slang::SourceManager sourceManager;
+    // 中文 is three bytes per character but one UTF-16 unit, and the emoji is a surrogate pair
+    auto buffer = sourceManager.assignText("source.sv", "// 中文 😀\nlogic x;\n");
+    REQUIRE(buffer);
+
+    CHECK(server::utf16Length("// 中文 😀") == 8);
+    CHECK(server::utf16ToByteOffset("// 中文 😀", 0) == 0);
+    CHECK(server::utf16ToByteOffset("// 中文 😀", 4) == 6);
+    CHECK(server::utf16ToByteOffset("// 中文 😀", 8) == 14);
+    CHECK(server::utf16ToByteOffset("// 中文 😀", 9) == std::nullopt);
+    // Columns inside a surrogate pair do not exist
+    CHECK(server::utf16ToByteOffset("😀", 1) == std::nullopt);
+
+    // The line is 14 bytes long, but a client sees 8 columns
+    auto lineEnd = sourceManager.getSourceLocation(buffer.id, 1, 15);
+    REQUIRE(lineEnd);
+    auto position = server::toPosition(*lineEnd, sourceManager);
+    CHECK(position.line == 0);
+    CHECK(position.character == 8);
+
+    // Round trip, and reject columns past the end of the line
+    auto location = server::toSourceLocation(buffer.id, position, sourceManager);
+    REQUIRE(location);
+    CHECK(location->offset() == lineEnd->offset());
+    CHECK_FALSE(server::toSourceLocation(buffer.id, lsp::Position{0, 9}, sourceManager));
+
+    auto secondLine = sourceManager.getSourceLocation(buffer.id, 2, 6);
+    REQUIRE(secondLine);
+    auto roundTripped = server::toSourceLocation(buffer.id, lsp::Position{1, 5}, sourceManager);
+    REQUIRE(roundTripped);
+    CHECK(roundTripped->offset() == secondLine->offset());
+}
+
+TEST_CASE("LSP ranges measure multi byte tokens") {
+    slang::SourceManager sourceManager;
+    auto buffer = sourceManager.assignText("source.sv", "logic 名字;\n");
+    REQUIRE(buffer);
+
+    // `toRange` takes a byte length, so a three byte token is three columns wide here
+    auto name = sourceManager.getSourceLocation(buffer.id, 1, 7);
+    REQUIRE(name);
+    auto range = server::toRange(*name, sourceManager, 6);
+    CHECK(range.start.line == 0);
+    CHECK(range.start.character == 6);
+    CHECK(range.end.line == 0);
+    CHECK(range.end.character == 8);
+}

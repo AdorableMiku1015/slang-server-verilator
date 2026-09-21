@@ -756,3 +756,79 @@ TEST_CASE("WatchedFiles_MultipleChangesProcessed") {
 
     std::filesystem::remove_all(tempDir);
 }
+
+TEST_CASE("EditsOnMultiByteLinesStayInSync") {
+    ServerHarness server;
+    auto doc = server.openFile("multibyte_edit.sv", R"(module top;
+    // 中文注释：这一行有很长的中文注释
+    logic value;
+endmodule
+)");
+    doc.save();
+
+    // Type at the end of the comment. A client addresses that column in UTF-16 code units, which
+    // is not the same as the byte offset into the line.
+    doc.after("很长的中文注释").write(" with ascii");
+    doc.publishChanges();
+    doc.save();
+
+    CHECK(doc.getText().find("// 中文注释：这一行有很长的中文注释 with ascii") !=
+          std::string::npos);
+    CHECK(doc.doc->textMatches(doc.getText()));
+
+    auto serverText = doc.doc->getText();
+    serverText.remove_suffix(1);
+    CHECK(serverText == doc.getText());
+}
+
+TEST_CASE("ErasingMultiByteTextKeepsBufferIntact") {
+    ServerHarness server;
+    auto doc = server.openFile("multibyte_erase.sv",
+                               "module top;\n    // 中文注释\n    logic value;\nendmodule\n");
+    doc.save();
+
+    // Delete a whole run of multi byte characters, as retyping a comment would
+    auto start = doc.getText().find("中文注释");
+    REQUIRE(start != std::string::npos);
+    doc.erase(start, start + std::string("中文注释").size());
+    doc.publishChanges();
+    doc.save();
+
+    CHECK(doc.doc->textMatches(doc.getText()));
+
+    auto serverText = doc.doc->getText();
+    serverText.remove_suffix(1);
+    CHECK(serverText == doc.getText());
+    CHECK(serverText.find("// \n") != std::string::npos);
+}
+
+TEST_CASE("OutOfRangeChangesAreRejected") {
+    ServerHarness server;
+    auto doc = server.openFile("out_of_range.sv", "module top;\n    logic value;\nendmodule\n");
+    doc.save();
+
+    auto before = std::string(doc.doc->getText());
+    before.pop_back();
+
+    // A client whose view of the document has drifted sends positions the buffer does not
+    // contain. They have to be rejected instead of being applied to whatever bytes are there.
+    CHECK_THROWS_AS(server.onDocDidChange(lsp::DidChangeTextDocumentParams{
+                        .textDocument = lsp::VersionedTextDocumentIdentifier{.uri = doc.m_uri},
+                        .contentChanges = {lsp::TextDocumentContentChangePartial{
+                            .range = lsp::Range{.start = lsp::Position{.line = 1, .character = 400},
+                                                .end = lsp::Position{.line = 1, .character = 401}},
+                            .text = "x"}}}),
+                    std::runtime_error);
+
+    CHECK_THROWS_AS(server.onDocDidChange(lsp::DidChangeTextDocumentParams{
+                        .textDocument = lsp::VersionedTextDocumentIdentifier{.uri = doc.m_uri},
+                        .contentChanges = {lsp::TextDocumentContentChangePartial{
+                            .range = lsp::Range{.start = lsp::Position{.line = 99, .character = 0},
+                                                .end = lsp::Position{.line = 99, .character = 0}},
+                            .text = "x"}}}),
+                    std::runtime_error);
+
+    auto after = std::string(doc.doc->getText());
+    after.pop_back();
+    CHECK(after == before);
+}

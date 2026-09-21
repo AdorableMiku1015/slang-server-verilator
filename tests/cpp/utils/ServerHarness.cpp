@@ -7,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 #define CATCH_CONFIG_RUNNER
 #include "ServerHarness.h"
+#include "util/Converters.h"
 #include <fstream>
 #include <rfl/from_generic.hpp>
 #include <unordered_set>
@@ -310,27 +311,39 @@ void DocumentHandle::open() {
 }
 
 lsp::Position DocumentHandle::getPosition(lsp::uint offset) {
-    lsp::uint line = 0, col = 0;
-    for (lsp::uint i = 0; i < offset; i++) {
+    offset = std::min<lsp::uint>(offset, m_text.size());
+
+    lsp::uint line = 0;
+    size_t lineStart = 0;
+    for (size_t i = 0; i < offset; i++) {
         if (m_text[i] == '\n') {
             line++;
-            col = 0;
-        }
-        else {
-            col++;
+            lineStart = i + 1;
         }
     }
-    return lsp::Position{line, col};
+
+    // Clients count columns in UTF-16 code units
+    return lsp::Position{.line = line,
+                         .character = static_cast<lsp::uint>(server::utf16Length(
+                             std::string_view(m_text).substr(lineStart, offset - lineStart)))};
 }
 
 lsp::uint DocumentHandle::getOffset(const lsp::Position& position) const {
     lsp::uint line = 0;
-    lsp::uint offset = 0;
-    while (offset < m_text.size() && line < position.line) {
-        if (m_text[offset++] == '\n')
+    size_t lineStart = 0;
+    while (lineStart < m_text.size() && line < position.line) {
+        if (m_text[lineStart++] == '\n')
             line++;
     }
-    return std::min<lsp::uint>(offset + position.character, m_text.size());
+
+    size_t lineEnd = lineStart;
+    while (lineEnd < m_text.size() && m_text[lineEnd] != '\n' && m_text[lineEnd] != '\r')
+        lineEnd++;
+
+    auto column = server::utf16ToByteOffset(
+        std::string_view(m_text).substr(lineStart, lineEnd - lineStart), position.character);
+    return static_cast<lsp::uint>(
+        std::min(lineStart + column.value_or(lineEnd - lineStart), m_text.size()));
 }
 
 std::vector<lsp::DocumentSymbol> DocumentHandle::getSymbolTree() {
