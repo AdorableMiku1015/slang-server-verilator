@@ -1974,3 +1974,53 @@ TEST_CASE("LocalparamKeywordInheritance") {
     CHECK(insertText.find("lp1") == std::string::npos);
     CHECK(insertText.find("lp2") == std::string::npos);
 }
+
+TEST_CASE("Completion Missing Optional Context") {
+    // `CompletionParams.context` is optional: clients that do not advertise
+    // completion.contextSupport leave it out. Reading the empty optional used whatever was left
+    // on the stack, which could look like an engaged triggerCharacter and take the server down.
+    ServerHarness server("repo1");
+
+    auto doc = server.openFile("missing_context.sv", R"(
+    module top;
+        logic sig;
+        
+    endmodule
+    )");
+    auto cursor = doc.before("endmodule");
+    // Going through the server route directly skips the sync that Cursor::getCompletions does
+    doc.ensureSynced();
+
+    auto withoutContext = server.getDocCompletion(lsp::CompletionParams{
+        .context = std::nullopt,
+        .textDocument = lsp::TextDocumentIdentifier{cursor.getUri()},
+        .position = cursor.getPosition(),
+    });
+    auto withContext = server.getDocCompletion(lsp::CompletionParams{
+        .context = lsp::CompletionContext{.triggerKind = lsp::CompletionTriggerKind::Invoked},
+        .textDocument = lsp::TextDocumentIdentifier{cursor.getUri()},
+        .position = cursor.getPosition(),
+    });
+
+    REQUIRE(rfl::holds_alternative<std::vector<lsp::CompletionItem>>(withoutContext));
+    REQUIRE(rfl::holds_alternative<std::vector<lsp::CompletionItem>>(withContext));
+    auto items = rfl::get<std::vector<lsp::CompletionItem>>(std::move(withoutContext));
+    auto itemsWithContext = rfl::get<std::vector<lsp::CompletionItem>>(withContext);
+    CHECK(!items.empty());
+    // A missing context behaves exactly like an invoked completion
+    CHECK(items.size() == itemsWithContext.size());
+    CHECK(std::ranges::equal(items, itemsWithContext, {}, &lsp::CompletionItem::label,
+                             &lsp::CompletionItem::label));
+}
+
+TEST_CASE("Resolve Completion Item Missing Optional Kind") {
+    // `CompletionItem.kind` is optional as well; resolving an item without one used to read the
+    // empty optional as a value.
+    ServerHarness server("repo1");
+
+    lsp::CompletionItem item{.label = "no_kind"};
+    auto resolved = server.getCompletionItemResolve(item);
+
+    CHECK(resolved.label == "no_kind");
+    CHECK(!resolved.documentation.has_value());
+}

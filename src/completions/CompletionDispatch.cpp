@@ -259,6 +259,12 @@ void CompletionDispatch::getCompletionItemResolve(lsp::CompletionItem& item,
     if (!item.label.empty() && item.label[0] == '$')
         return;
 
+    // `kind` is optional in the protocol, and without it there is nothing to dispatch on
+    if (!item.kind) {
+        WARN("Completion item '{}' has no kind, nothing to resolve", item.label);
+        return;
+    }
+
     switch (*item.kind) {
         case lsp::CompletionItemKind::Constant:
             completions::MacroCompletionQuery::resolve(*this, item);
