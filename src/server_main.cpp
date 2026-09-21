@@ -12,6 +12,8 @@
 #endif
 
 #include "SlangServer.h"
+#include <cstdio>
+#include <exception>
 #include <fmt/format.h>
 #include <rfl/DefaultIfMissing.hpp>
 
@@ -21,7 +23,40 @@
 using namespace slang;
 using namespace server;
 
+namespace {
+
+/// Anything that terminates the process - an exception escaping a thread, a `noexcept` violation,
+/// a throwing destructor - used to abort with nothing in the log to say why. Record the reason
+/// before aborting so a crash in the field is diagnosable.
+void logTerminateAndAbort() {
+    // Deliberately avoid allocation and formatting while unwinding
+    if (auto exception = std::current_exception()) {
+        try {
+            std::rethrow_exception(exception);
+        }
+        catch (const std::exception& e) {
+            std::fputs("FATAL: terminating: ", stderr);
+            std::fputs(e.what(), stderr);
+            std::fputc('\n', stderr);
+            std::fflush(stderr);
+            std::abort();
+        }
+        catch (...) {
+            std::fputs("FATAL: terminating with a non-standard exception\n", stderr);
+            std::fflush(stderr);
+            std::abort();
+        }
+    }
+    std::fputs("FATAL: terminating without an active exception\n", stderr);
+    std::fflush(stderr);
+    std::abort();
+}
+
+} // namespace
+
 int main(int argc, char** argv) {
+
+    std::set_terminate(logTerminateAndAbort);
 
 #ifdef _WIN32
     // By default windows accesses streams in text mode. This mostly means that

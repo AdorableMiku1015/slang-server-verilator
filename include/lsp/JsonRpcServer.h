@@ -271,6 +271,9 @@ protected:
                 catch (const std::exception& e) {
                     messageLog.setError(e.what());
                 }
+                catch (...) {
+                    messageLog.setError("unknown exception");
+                }
             }
             else if (request.method.starts_with("$/")) {
                 server::logging::warn("<-/- {} (ignoring threaded req)", request.method);
@@ -309,6 +312,11 @@ protected:
             messageLog.setError(e.what());
             return RpcError{.code = static_cast<int>(ErrorCodes::InternalError),
                             .message = e.what()};
+        }
+        catch (...) {
+            messageLog.setError("unknown exception");
+            return RpcError{.code = static_cast<int>(ErrorCodes::InternalError),
+                            .message = "Unknown exception"};
         }
     }
 
@@ -413,7 +421,19 @@ public:
                     queue.pop_front();
                     workerBusy = true;
                 }
-                handleMessage(std::move(message.request), std::move(message.ctx), false);
+                // A handler that lets an exception escape used to abort the whole process, with no
+                // trace of the reason; report it and keep serving instead
+                auto method = std::string(message.request.method);
+                try {
+                    handleMessage(std::move(message.request), std::move(message.ctx), false);
+                }
+                catch (const std::exception& e) {
+                    server::logging::error("Uncaught exception while handling {}: {}", method,
+                                           e.what());
+                }
+                catch (...) {
+                    server::logging::error("Uncaught exception while handling {}", method);
+                }
                 {
                     std::lock_guard lock(queueMutex);
                     workerBusy = false;
@@ -457,12 +477,51 @@ public:
 
         // Main loop - reads stdin
         bool shutdown = false;
-        while (auto request = readJson<RpcRequest>(inputLine, inputContent)) {
-            shutdown = request->method == "shutdown";
-            if (request->method == "$/cancelRequest")
-                handleCancelRequest(std::move(*request));
-            else
-                enqueue(std::move(*request));
+        int parseFailures = 0;
+        while (true) {
+            std::optional<RpcRequest> request;
+            try {
+                request = readJson<RpcRequest>(inputLine, inputContent);
+            }
+            catch (const std::exception& e) {
+                // The message was consumed, so the stream is still framed correctly
+                server::logging::error("Failed to parse an incoming message: {}", e.what());
+                if (++parseFailures > 5) {
+                    server::logging::error("Giving up after repeated unparseable messages");
+                    break;
+                }
+                continue;
+            }
+            catch (...) {
+                server::logging::error("Failed to parse an incoming message");
+                if (++parseFailures > 5)
+                    break;
+                continue;
+            }
+            parseFailures = 0;
+
+            if (!request) {
+                // The client closed the connection; exiting cleanly is the expected response
+                server::logging::info("Input stream closed, shutting down");
+                break;
+            }
+
+            try {
+                shutdown = request->method == "shutdown";
+                if (request->method == "$/cancelRequest")
+                    handleCancelRequest(std::move(*request));
+                else
+                    enqueue(std::move(*request));
+            }
+            catch (const std::exception& e) {
+                server::logging::error("Uncaught exception while queueing a message: {}", e.what());
+                continue;
+            }
+            catch (...) {
+                server::logging::error("Uncaught exception while queueing a message");
+                continue;
+            }
+
             if (shutdown)
                 break;
         }
