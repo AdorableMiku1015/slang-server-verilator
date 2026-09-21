@@ -188,6 +188,9 @@ File input is sent to stdin, and formatted output is read from stdout.',
 
   client: LanguageClient | undefined
   private isRestarting: boolean = false
+  /// Set when we stop the server ourselves (restart, config change, window reload). The state
+  /// change that follows is not a crash, so it must not be reported as one.
+  private shuttingDown: boolean = false
 
   path: PathConfigObject = new PathConfigObject(
     {
@@ -276,6 +279,7 @@ File input is sent to stdin, and formatted output is read from stdout.',
       this.client.onDidChangeState(
         ({ oldState, newState }: { oldState: vscodelc.State; newState: vscodelc.State }) => {
           if (newState === vscodelc.State.Running) {
+            this.shuttingDown = false
             // clangd starts or restarts after crash.
             this.client!.onNotification('slang/setConfig', (config: slang.Config) => {
               // Set after initialization
@@ -284,7 +288,8 @@ File input is sent to stdin, and formatted output is read from stdout.',
           } else if (
             oldState === vscodelc.State.Running &&
             newState === vscodelc.State.Stopped &&
-            !this.isRestarting
+            !this.isRestarting &&
+            !this.shuttingDown
           ) {
             vscode.window
               .showErrorMessage(
@@ -434,6 +439,9 @@ File input is sent to stdin, and formatted output is read from stdout.',
 
   async stopServer() {
     if (this.client !== undefined) {
+      // Any stop we make is deliberate: deactivate() also comes through here, which is how a
+      // window reload (for example after adding a workspace folder) used to look like a crash
+      this.shuttingDown = true
       try {
         await this.client.stop()
       } catch (e) {
