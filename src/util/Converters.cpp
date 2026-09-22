@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <fmt/format.h>
 
+#include "slang/ast/symbols/CompilationUnitSymbols.h"
+#include "slang/ast/types/AllTypes.h"
 #include "slang/text/SourceLocation.h"
 
 namespace server {
@@ -191,6 +193,103 @@ lsp::Location toLocation(const SourceLocation& loc, const SourceManager& sourceM
     return lsp::Location{.uri = URI::fromFile(sourceManager.getFullPath(actualLoc.buffer())),
                          .range = lsp::Range{.start = toPosition(actualLoc, sourceManager),
                                              .end = toPosition(actualLoc, sourceManager)}};
+}
+
+lsp::CompletionItemKind toCompletionItemKind(const ast::Symbol& symbol) {
+    switch (symbol.kind) {
+        // Namespaces have no completion kind of their own
+        case ast::SymbolKind::Package:
+        case ast::SymbolKind::ConfigBlock:
+            return lsp::CompletionItemKind::Module;
+
+        case ast::SymbolKind::Definition: {
+            switch (symbol.as<ast::DefinitionSymbol>().definitionKind) {
+                case ast::DefinitionKind::Interface:
+                    return lsp::CompletionItemKind::Interface;
+                case ast::DefinitionKind::Module:
+                case ast::DefinitionKind::Program:
+                    return lsp::CompletionItemKind::Module;
+            }
+            return lsp::CompletionItemKind::Property;
+        }
+
+        case ast::SymbolKind::InterfacePort:
+        case ast::SymbolKind::Modport:
+        case ast::SymbolKind::ModportPort:
+        case ast::SymbolKind::ModportClocking:
+        case ast::SymbolKind::ClockingBlock:
+            return lsp::CompletionItemKind::Interface;
+
+        case ast::SymbolKind::Port:
+        case ast::SymbolKind::MultiPort:
+        case ast::SymbolKind::PrimitivePort:
+        case ast::SymbolKind::AssertionPort:
+        case ast::SymbolKind::Net:
+        case ast::SymbolKind::NetAlias:
+        case ast::SymbolKind::Variable:
+        case ast::SymbolKind::ClockVar:
+        case ast::SymbolKind::LocalAssertionVar:
+        case ast::SymbolKind::Iterator:
+        case ast::SymbolKind::Genvar:
+            return lsp::CompletionItemKind::Variable;
+
+        case ast::SymbolKind::FormalArgument:
+        case ast::SymbolKind::Parameter:
+        case ast::SymbolKind::Specparam:
+        case ast::SymbolKind::DefParam:
+            return lsp::CompletionItemKind::Constant;
+
+        case ast::SymbolKind::TypeParameter:
+            return lsp::CompletionItemKind::TypeParameter;
+
+        case ast::SymbolKind::EnumValue:
+            return lsp::CompletionItemKind::EnumMember;
+
+        case ast::SymbolKind::EnumType:
+            return lsp::CompletionItemKind::Enum;
+
+        case ast::SymbolKind::TypeAlias: {
+            auto& typeAlias = symbol.as<ast::TypeAliasType>();
+            return typeAlias.isEnum() ? lsp::CompletionItemKind::Enum
+                                      : lsp::CompletionItemKind::Struct;
+        }
+
+        case ast::SymbolKind::PackedStructType:
+        case ast::SymbolKind::UnpackedStructType:
+        case ast::SymbolKind::PackedUnionType:
+        case ast::SymbolKind::UnpackedUnionType:
+        case ast::SymbolKind::ForwardingTypedef:
+            return lsp::CompletionItemKind::Struct;
+
+        case ast::SymbolKind::ClassType:
+        case ast::SymbolKind::GenericClassDef:
+        case ast::SymbolKind::CovergroupType:
+        case ast::SymbolKind::Instance:
+        case ast::SymbolKind::InstanceArray:
+        case ast::SymbolKind::PrimitiveInstance:
+        case ast::SymbolKind::CheckerInstance:
+        case ast::SymbolKind::CheckerInstanceBody:
+            return lsp::CompletionItemKind::Class;
+
+        case ast::SymbolKind::Field:
+        case ast::SymbolKind::ClassProperty:
+        case ast::SymbolKind::PatternVar:
+            return lsp::CompletionItemKind::Field;
+
+        case ast::SymbolKind::Subroutine:
+        case ast::SymbolKind::MethodPrototype:
+        case ast::SymbolKind::LetDecl:
+            return lsp::CompletionItemKind::Function;
+
+        case ast::SymbolKind::GenerateBlock:
+        case ast::SymbolKind::GenerateBlockArray:
+            // Ideally would be "Module" which looks like '{}', but we have to diff between
+            // actual module completions
+            return lsp::CompletionItemKind::Snippet;
+
+        default:
+            return lsp::CompletionItemKind::Property;
+    }
 }
 
 lsp::SymbolKind toSymbolKind(const syntax::SyntaxKind& kind) {

@@ -2057,3 +2057,64 @@ TEST_CASE("InstantiationCompletionOnMultiByteLine") {
     CHECK(serverText.find("// 例化 Dut 模块：中文注释") != std::string::npos);
     CHECK(serverText.find("Dut #(") != std::string::npos);
 }
+
+TEST_CASE("CompletionRankingAndKinds") {
+    // The list used to be flat: no sortText at all, and kinds that did not match the symbol
+    // (a data port looked like an interface, a parameter like a type). Clients sort by sortText
+    // first, so ranking is what puts what the cursor can actually refer to at the top.
+    ServerHarness server("repo1");
+
+    auto doc = server.openFile("ranking.sv", R"(
+    module ranking;
+        typedef logic [3:0] nibble_t;
+        parameter int WIDTH = 4;
+        logic [3:0] sig;
+        nibble_t value;
+        assign value = '0;
+        // cursor_module
+    endmodule
+    )");
+    doc.save();
+
+    auto findItem = [](std::vector<CompletionHandle>& items, std::string_view label) {
+        return std::find_if(items.begin(), items.end(), [&](const CompletionHandle& item) {
+            return item.m_item.label == label;
+        });
+    };
+
+    SECTION("visible symbols rank above keywords and the workspace library") {
+        auto items = doc.before("// cursor_module").getCompletions();
+
+        auto local = findItem(items, "nibble_t");
+        REQUIRE(local != items.end());
+        CHECK(local->m_item.sortText == "0");
+
+        auto keyword = findItem(items, "logic");
+        REQUIRE(keyword != items.end());
+        CHECK(keyword->m_item.sortText == "2");
+
+        auto library = findItem(items, "Dut");
+        REQUIRE(library != items.end());
+        CHECK(library->m_item.sortText == "3");
+    }
+
+    SECTION("kinds follow the symbol, not a catch-all") {
+        auto items = doc.after("assign value = ").getCompletions();
+
+        auto signal = findItem(items, "sig");
+        REQUIRE(signal != items.end());
+        CHECK(signal->m_item.kind == lsp::CompletionItemKind::Variable);
+        CHECK(signal->m_item.sortText == "0");
+
+        auto parameter = findItem(items, "WIDTH");
+        REQUIRE(parameter != items.end());
+        CHECK(parameter->m_item.kind == lsp::CompletionItemKind::Constant);
+
+        auto type = findItem(items, "nibble_t");
+        REQUIRE(type != items.end());
+        CHECK(type->m_item.kind == lsp::CompletionItemKind::Struct);
+
+        // Packages are scope names, so they are noise in an expression
+        CHECK(findItem(items, "base_pkg") == items.end());
+    }
+}

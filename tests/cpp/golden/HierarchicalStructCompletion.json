@@ -7,7 +7,7 @@
           "detail": " logic[7:0]",
           "description": "simple_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic [7:0] addr;\n````"
@@ -33,7 +33,7 @@
           "detail": " logic[31:0]",
           "description": "simple_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic [31:0] data;\n````"
@@ -59,7 +59,7 @@
           "detail": " logic",
           "description": "simple_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic valid;\n````"
@@ -89,7 +89,7 @@
           "detail": " simple_struct_t",
           "description": "nested_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nsimple_struct_t inner;\n````"
@@ -115,7 +115,7 @@
           "detail": " logic[7:0]",
           "description": "simple_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic [7:0] addr;\n````"
@@ -141,7 +141,7 @@
           "detail": " logic[31:0]",
           "description": "simple_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic [31:0] data;\n````"
@@ -167,7 +167,7 @@
           "detail": " logic",
           "description": "simple_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic valid;\n````"
@@ -193,7 +193,7 @@
           "detail": " logic",
           "description": "nested_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic ready;\n````"
@@ -219,7 +219,7 @@
           "detail": " logic[15:0]",
           "description": "nested_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic [15:0] tag;\n````"
@@ -249,7 +249,7 @@
           "detail": " logic",
           "description": "deep_nested_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic enable;\n````"
@@ -275,7 +275,7 @@
           "detail": " logic[3:0]",
           "description": "deep_nested_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic [3:0] id;\n````"
@@ -301,7 +301,7 @@
           "detail": " nested_struct_t",
           "description": "deep_nested_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nnested_struct_t level1;\n````"
@@ -327,7 +327,7 @@
           "detail": " simple_struct_t",
           "description": "nested_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nsimple_struct_t inner;\n````"
@@ -353,7 +353,7 @@
           "detail": " logic[7:0]",
           "description": "simple_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic [7:0] addr;\n````"
@@ -379,7 +379,7 @@
           "detail": " logic[31:0]",
           "description": "simple_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic [31:0] data;\n````"
@@ -405,7 +405,7 @@
           "detail": " logic",
           "description": "simple_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic valid;\n````"
@@ -431,7 +431,7 @@
           "detail": " logic",
           "description": "nested_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic ready;\n````"
@@ -457,7 +457,7 @@
           "detail": " logic[15:0]",
           "description": "nested_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic [15:0] tag;\n````"
@@ -487,7 +487,7 @@
           "detail": " logic[7:0]",
           "description": "simple_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic [7:0] addr;\n````"
@@ -513,7 +513,7 @@
           "detail": " logic[31:0]",
           "description": "simple_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic [31:0] data;\n````"
@@ -539,7 +539,7 @@
           "detail": " logic",
           "description": "simple_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic valid;\n````"
@@ -569,7 +569,7 @@
           "detail": " simple_struct_t",
           "description": "nested_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nsimple_struct_t inner;\n````"
@@ -595,7 +595,7 @@
           "detail": " logic[7:0]",
           "description": "simple_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic [7:0] addr;\n````"
@@ -621,7 +621,7 @@
           "detail": " logic[31:0]",
           "description": "simple_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic [31:0] data;\n````"
@@ -647,7 +647,7 @@
           "detail": " logic",
           "description": "simple_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic valid;\n````"
@@ -673,7 +673,7 @@
           "detail": " logic",
           "description": "nested_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic ready;\n````"
@@ -699,7 +699,7 @@
           "detail": " logic[15:0]",
           "description": "nested_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic [15:0] tag;\n````"
@@ -729,7 +729,7 @@
           "detail": " logic[7:0]",
           "description": "simple_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic [7:0] addr;\n````"
@@ -755,7 +755,7 @@
           "detail": " logic[31:0]",
           "description": "simple_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic [31:0] data;\n````"
@@ -781,7 +781,7 @@
           "detail": " logic",
           "description": "simple_struct_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic valid;\n````"

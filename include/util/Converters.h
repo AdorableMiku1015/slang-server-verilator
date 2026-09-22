@@ -13,6 +13,7 @@
 #include <string_view>
 
 #include "slang/ast/SemanticFacts.h"
+#include "slang/ast/Symbol.h"
 #include "slang/parsing/Token.h"
 #include "slang/syntax/SyntaxNode.h"
 #include "slang/text/SourceLocation.h"
@@ -50,6 +51,11 @@ lsp::Location toLocation(const SourceRange& range, const SourceManager& sourceMa
 lsp::Location toLocation(const SourceLocation& loc, const SourceManager& sourceManager);
 
 lsp::SymbolKind toSymbolKind(const slang::syntax::SyntaxKind& kind);
+
+/// Completion item kind for a symbol. Grouped the same way as the semantic token types so that both
+/// features describe a symbol consistently: ports, parameters, instances and so on are not all
+/// "property", and a data port is not an interface.
+lsp::CompletionItemKind toCompletionItemKind(const slang::ast::Symbol& symbol);
 
 lsp::MarkupContent markdown(std::string& md);
 

@@ -8,12 +8,15 @@
 
 #include "completions/KeywordCompletions.h"
 
+#include "completions/CompletionDispatch.h"
 #include <array>
 #include <string_view>
 
 namespace server::completions {
 
 void addKeywordCompletions(std::vector<lsp::CompletionItem>& results) {
+    auto first = results.size();
+
     static constexpr std::array moduleMemberKeywords{"logic", "assign", "wire", "reg"};
     for (std::string_view keyword : moduleMemberKeywords) {
         results.push_back(lsp::CompletionItem{
@@ -48,6 +51,8 @@ void addKeywordCompletions(std::vector<lsp::CompletionItem>& results) {
         .insertText = "always_latch begin\n\t$0\nend",
         .insertTextFormat = lsp::InsertTextFormat::Snippet,
     });
+
+    rankCompletions(results, first, rank::Keyword);
 }
 
 } // namespace server::completions

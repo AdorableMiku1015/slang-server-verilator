@@ -6,7 +6,7 @@
         "labelDetails": {
           "detail": " input logic"
         },
-        "kind": "Interface",
+        "kind": "Variable",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\ninput logic clk\n````"
@@ -31,7 +31,7 @@
         "labelDetails": {
           "detail": " output logic[7:0]"
         },
-        "kind": "Interface",
+        "kind": "Variable",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\noutput logic [7:0] data_out\n````"
@@ -81,7 +81,7 @@
         "labelDetails": {
           "detail": " input logic"
         },
-        "kind": "Interface",
+        "kind": "Variable",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\ninput logic rst\n````"
@@ -106,7 +106,7 @@
         "labelDetails": {
           "detail": " output logic"
         },
-        "kind": "Interface",
+        "kind": "Variable",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\noutput logic valid\n````"

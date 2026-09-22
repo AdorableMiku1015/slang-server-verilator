@@ -6,11 +6,12 @@
         "labelDetails": {
           "detail": " input logic"
         },
-        "kind": "Interface",
+        "kind": "Variable",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\ninput logic a\n````"
         },
+        "sortText": "0",
         "filterText": "a",
         "textEdit": {
           "range": {
@@ -31,11 +32,12 @@
         "labelDetails": {
           "detail": " output logic"
         },
-        "kind": "Interface",
+        "kind": "Variable",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\noutput logic b\n````"
         },
+        "sortText": "0",
         "filterText": "b",
         "textEdit": {
           "range": {
@@ -52,42 +54,16 @@
         }
       },
       {
-        "label": "base_pkg",
-        "labelDetails": {
-          "detail": " Package"
-        },
-        "kind": "Module",
-        "documentation": {
-          "kind": "markdown",
-          "value": "````systemverilog\npackage base_pkg;\n````"
-        },
-        "filterText": "base_pkg",
-        "insertText": "base_pkg",
-        "insertTextFormat": "PlainText",
-        "textEdit": {
-          "range": {
-            "start": {
-              "line": 10,
-              "character": 0
-            },
-            "end": {
-              "line": 10,
-              "character": 0
-            }
-          },
-          "newText": "base_pkg"
-        }
-      },
-      {
         "label": "clk",
         "labelDetails": {
           "detail": " input logic"
         },
-        "kind": "Interface",
+        "kind": "Variable",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\ninput logic clk\n````"
         },
+        "sortText": "0",
         "filterText": "clk",
         "textEdit": {
           "range": {
@@ -113,6 +89,7 @@
           "kind": "markdown",
           "value": "````systemverilog\nlogic internal_sig;\n````"
         },
+        "sortText": "0",
         "filterText": "internal_sig",
         "textEdit": {
           "range": {
@@ -138,6 +115,7 @@
           "kind": "markdown",
           "value": "````systemverilog\nwire my_wire;\n````"
         },
+        "sortText": "0",
         "filterText": "my_wire",
         "textEdit": {
           "range": {
@@ -161,6 +139,7 @@
         },
         "kind": "Function",
         "documentation": "int randomize(...)",
+        "sortText": "0",
         "filterText": "randomize",
         "insertText": "randomize()",
         "insertTextFormat": "Snippet",
@@ -176,33 +155,6 @@
             }
           },
           "newText": "randomize()"
-        }
-      },
-      {
-        "label": "util_pkg",
-        "labelDetails": {
-          "detail": " Package"
-        },
-        "kind": "Module",
-        "documentation": {
-          "kind": "markdown",
-          "value": "````systemverilog\npackage util_pkg;\n````"
-        },
-        "filterText": "util_pkg",
-        "insertText": "util_pkg",
-        "insertTextFormat": "PlainText",
-        "textEdit": {
-          "range": {
-            "start": {
-              "line": 10,
-              "character": 0
-            },
-            "end": {
-              "line": 10,
-              "character": 0
-            }
-          },
-          "newText": "util_pkg"
         }
       }
     ]

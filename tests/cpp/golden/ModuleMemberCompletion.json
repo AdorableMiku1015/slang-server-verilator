@@ -11,6 +11,7 @@
           "kind": "markdown",
           "value": "````systemverilog\nmodule Dut  #(\n    parameter int a = 0,\n    parameter int b = 1\n) (\n    input logic foo\n);\n````"
         },
+        "sortText": "3",
         "filterText": "Dut",
         "insertText": "Dut #(\n    .a(${1:a /* default 0 */}),\n    .b(${2:b /* default 1 */})\n ) ${3:dut} (\n    .foo(${4:foo})\n);",
         "insertTextFormat": "Snippet",
@@ -31,6 +32,7 @@
       {
         "label": "always_comb",
         "kind": "Snippet",
+        "sortText": "2",
         "filterText": "always_comb",
         "insertText": "always_comb begin\n    $0\nend",
         "insertTextFormat": "Snippet",
@@ -51,6 +53,7 @@
       {
         "label": "always_ff",
         "kind": "Snippet",
+        "sortText": "2",
         "filterText": "always_ff",
         "insertText": "always_ff @($0) begin\n    \nend",
         "insertTextFormat": "Snippet",
@@ -71,6 +74,7 @@
       {
         "label": "always_latch",
         "kind": "Snippet",
+        "sortText": "2",
         "filterText": "always_latch",
         "insertText": "always_latch begin\n    $0\nend",
         "insertTextFormat": "Snippet",
@@ -91,6 +95,7 @@
       {
         "label": "assign",
         "kind": "Keyword",
+        "sortText": "2",
         "filterText": "assign",
         "textEdit": {
           "range": {
@@ -116,6 +121,7 @@
           "kind": "markdown",
           "value": "````systemverilog\npackage base_pkg;\n````"
         },
+        "sortText": "3",
         "filterText": "base_pkg",
         "insertText": "base_pkg",
         "insertTextFormat": "PlainText",
@@ -143,6 +149,7 @@
           "kind": "markdown",
           "value": "````systemverilog\n// Type definitions\ntypedef struct {\n    logic [7:0] addr;\n    logic [31:0] data;\n} bus_transaction_t;\n````"
         },
+        "sortText": "0",
         "filterText": "bus_transaction_t",
         "textEdit": {
           "range": {
@@ -168,6 +175,7 @@
           "kind": "markdown",
           "value": "````systemverilog\nmodule cycle_test_module;\n````"
         },
+        "sortText": "3",
         "filterText": "cycle_test_module",
         "insertText": "cycle_test_module ${1:cycle_test_module} ();",
         "insertTextFormat": "Snippet",
@@ -188,6 +196,7 @@
       {
         "label": "logic",
         "kind": "Keyword",
+        "sortText": "2",
         "filterText": "logic",
         "textEdit": {
           "range": {
@@ -211,6 +220,7 @@
         },
         "kind": "Class",
         "documentation": "",
+        "sortText": "0",
         "filterText": "mailbox",
         "textEdit": {
           "range": {
@@ -234,6 +244,7 @@
         },
         "kind": "Class",
         "documentation": "",
+        "sortText": "0",
         "filterText": "process",
         "textEdit": {
           "range": {
@@ -252,6 +263,7 @@
       {
         "label": "reg",
         "kind": "Keyword",
+        "sortText": "2",
         "filterText": "reg",
         "textEdit": {
           "range": {
@@ -275,6 +287,7 @@
         },
         "kind": "Class",
         "documentation": "",
+        "sortText": "0",
         "filterText": "semaphore",
         "textEdit": {
           "range": {
@@ -300,6 +313,7 @@
           "kind": "markdown",
           "value": "````systemverilog\ntypedef enum logic [1:0] {\n    IDLE = 2'b00,\n    ACTIVE = 2'b01,\n    WAIT = 2'b10\n} state_t;\n````"
         },
+        "sortText": "0",
         "filterText": "state_t",
         "textEdit": {
           "range": {
@@ -325,6 +339,7 @@
           "kind": "markdown",
           "value": "````systemverilog\nmodule tb;\n````"
         },
+        "sortText": "3",
         "filterText": "tb",
         "insertText": "tb ${1:tb} ();",
         "insertTextFormat": "Snippet",
@@ -352,6 +367,7 @@
           "kind": "markdown",
           "value": "````systemverilog\npackage util_pkg;\n````"
         },
+        "sortText": "3",
         "filterText": "util_pkg",
         "insertText": "util_pkg",
         "insertTextFormat": "PlainText",
@@ -377,6 +393,7 @@
         },
         "kind": "Class",
         "documentation": "",
+        "sortText": "0",
         "filterText": "weak_reference",
         "textEdit": {
           "range": {
@@ -395,6 +412,7 @@
       {
         "label": "wire",
         "kind": "Keyword",
+        "sortText": "2",
         "filterText": "wire",
         "textEdit": {
           "range": {
@@ -425,6 +443,7 @@
           "kind": "markdown",
           "value": "````systemverilog\ntypedef enum logic [1:0] {\n    IDLE = 2'b00,\n    ACTIVE = 2'b01,\n    WAIT = 2'b10\n} state_t;\n````"
         },
+        "sortText": "0",
         "filterText": "ACTIVE",
         "textEdit": {
           "range": {
@@ -451,6 +470,7 @@
           "kind": "markdown",
           "value": "````systemverilog\ntypedef enum logic [1:0] {\n    IDLE = 2'b00,\n    ACTIVE = 2'b01,\n    WAIT = 2'b10\n} state_t;\n````"
         },
+        "sortText": "0",
         "filterText": "IDLE",
         "textEdit": {
           "range": {
@@ -471,11 +491,12 @@
         "labelDetails": {
           "detail": " int"
         },
-        "kind": "TypeParameter",
+        "kind": "Constant",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\n// Parameters\nparameter int PARAM_INT = 42\n````"
         },
+        "sortText": "0",
         "filterText": "PARAM_INT",
         "textEdit": {
           "range": {
@@ -496,11 +517,12 @@
         "labelDetails": {
           "detail": " logic [7:0]"
         },
-        "kind": "TypeParameter",
+        "kind": "Constant",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nparameter logic [7:0] PARAM_LOGIC = 8'hAA\n````"
         },
+        "sortText": "0",
         "filterText": "PARAM_LOGIC",
         "textEdit": {
           "range": {
@@ -527,6 +549,7 @@
           "kind": "markdown",
           "value": "````systemverilog\ntypedef enum logic [1:0] {\n    IDLE = 2'b00,\n    ACTIVE = 2'b01,\n    WAIT = 2'b10\n} state_t;\n````"
         },
+        "sortText": "0",
         "filterText": "WAIT",
         "textEdit": {
           "range": {
@@ -543,33 +566,6 @@
         }
       },
       {
-        "label": "base_pkg",
-        "labelDetails": {
-          "detail": " Package"
-        },
-        "kind": "Module",
-        "documentation": {
-          "kind": "markdown",
-          "value": "````systemverilog\npackage base_pkg;\n````"
-        },
-        "filterText": "base_pkg",
-        "insertText": "base_pkg",
-        "insertTextFormat": "PlainText",
-        "textEdit": {
-          "range": {
-            "start": {
-              "line": 64,
-              "character": 25
-            },
-            "end": {
-              "line": 64,
-              "character": 25
-            }
-          },
-          "newText": "base_pkg"
-        }
-      },
-      {
         "label": "bus_port",
         "labelDetails": {
           "detail": " bus_if.master"
@@ -579,7 +575,10 @@
           "kind": "markdown",
           "value": "````systemverilog\nbus_if.master bus_port\n````"
         },
+        "sortText": "0",
         "filterText": "bus_port",
+        "insertText": "bus_port",
+        "insertTextFormat": "PlainText",
         "textEdit": {
           "range": {
             "start": {
@@ -604,6 +603,7 @@
           "kind": "markdown",
           "value": "````systemverilog\n// Type definitions\ntypedef struct {\n    logic [7:0] addr;\n    logic [31:0] data;\n} bus_transaction_t;\n````"
         },
+        "sortText": "0",
         "filterText": "bus_transaction_t",
         "textEdit": {
           "range": {
@@ -629,6 +629,7 @@
           "kind": "markdown",
           "value": "````systemverilog\n// Local functions\nfunction logic [7:0] calc_parity(input logic [7:0] data);\n    return ^data;\nendfunction\n````"
         },
+        "sortText": "0",
         "filterText": "calc_parity",
         "insertText": "calc_parity(${1:data /* logic[7:0] */})",
         "insertTextFormat": "Snippet",
@@ -651,11 +652,12 @@
         "labelDetails": {
           "detail": " input logic"
         },
-        "kind": "Interface",
+        "kind": "Variable",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\ninput logic clk\n````"
         },
+        "sortText": "0",
         "filterText": "clk",
         "textEdit": {
           "range": {
@@ -676,11 +678,12 @@
         "labelDetails": {
           "detail": " output logic[7:0]"
         },
-        "kind": "Interface",
+        "kind": "Variable",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\noutput logic [7:0] data_out\n````"
         },
+        "sortText": "0",
         "filterText": "data_out",
         "textEdit": {
           "range": {
@@ -706,6 +709,7 @@
           "kind": "markdown",
           "value": "````systemverilog\nfor (i = 0; i < 4; i++) begin : gen_array\n    logic [7:0] gen_signal;\nend\n````"
         },
+        "sortText": "0",
         "filterText": "gen_array",
         "textEdit": {
           "range": {
@@ -726,11 +730,12 @@
         "labelDetails": {
           "detail": " "
         },
-        "kind": "Property",
+        "kind": "Variable",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\ni\n````"
         },
+        "sortText": "0",
         "filterText": "i",
         "textEdit": {
           "range": {
@@ -756,6 +761,7 @@
           "kind": "markdown",
           "value": "````systemverilog\n// Local variables of different types\nlogic internal_signal;\n````"
         },
+        "sortText": "0",
         "filterText": "internal_signal",
         "textEdit": {
           "range": {
@@ -781,7 +787,10 @@
           "kind": "markdown",
           "value": "````systemverilog\n// Interface port example\nsimple_interface intf();\n````"
         },
+        "sortText": "0",
         "filterText": "intf",
+        "insertText": "intf",
+        "insertTextFormat": "PlainText",
         "textEdit": {
           "range": {
             "start": {
@@ -804,6 +813,7 @@
         },
         "kind": "Function",
         "documentation": "int randomize(...)",
+        "sortText": "0",
         "filterText": "randomize",
         "insertText": "randomize()",
         "insertTextFormat": "Snippet",
@@ -831,6 +841,7 @@
           "kind": "markdown",
           "value": "````systemverilog\n// Task\ntask reset_signals();\n    internal_signal <= 1'b0;\n    wide_signal <= 16'h0;\nendtask\n````"
         },
+        "sortText": "0",
         "filterText": "reset_signals",
         "insertText": "reset_signals()",
         "insertTextFormat": "Snippet",
@@ -853,11 +864,12 @@
         "labelDetails": {
           "detail": " input logic"
         },
-        "kind": "Interface",
+        "kind": "Variable",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\ninput logic rst\n````"
         },
+        "sortText": "0",
         "filterText": "rst",
         "textEdit": {
           "range": {
@@ -883,6 +895,7 @@
           "kind": "markdown",
           "value": "````systemverilog\ntypedef enum logic [1:0] {\n    IDLE = 2'b00,\n    ACTIVE = 2'b01,\n    WAIT = 2'b10\n} state_t;\n````"
         },
+        "sortText": "0",
         "filterText": "state_t",
         "textEdit": {
           "range": {
@@ -908,7 +921,10 @@
           "kind": "markdown",
           "value": "````systemverilog\n// Instance of another module\nsub_module u_sub (\n    .clk(clk),\n    .rst(rst),\n    .enable(internal_signal)\n);\n````"
         },
+        "sortText": "0",
         "filterText": "u_sub",
+        "insertText": "u_sub",
+        "insertTextFormat": "PlainText",
         "textEdit": {
           "range": {
             "start": {
@@ -924,33 +940,6 @@
         }
       },
       {
-        "label": "util_pkg",
-        "labelDetails": {
-          "detail": " Package"
-        },
-        "kind": "Module",
-        "documentation": {
-          "kind": "markdown",
-          "value": "````systemverilog\npackage util_pkg;\n````"
-        },
-        "filterText": "util_pkg",
-        "insertText": "util_pkg",
-        "insertTextFormat": "PlainText",
-        "textEdit": {
-          "range": {
-            "start": {
-              "line": 64,
-              "character": 25
-            },
-            "end": {
-              "line": 64,
-              "character": 25
-            }
-          },
-          "newText": "util_pkg"
-        }
-      },
-      {
         "label": "wide_signal",
         "labelDetails": {
           "detail": " logic [15:0]"
@@ -960,6 +949,7 @@
           "kind": "markdown",
           "value": "````systemverilog\nlogic [15:0] wide_signal;\n````"
         },
+        "sortText": "0",
         "filterText": "wide_signal",
         "textEdit": {
           "range": {

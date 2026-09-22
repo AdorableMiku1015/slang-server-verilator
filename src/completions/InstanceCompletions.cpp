@@ -9,6 +9,7 @@
 #include "completions/InstanceCompletions.h"
 
 #include "Indexer.h"
+#include "completions/CompletionDispatch.h"
 #include "lsp/SnippetString.h"
 #include "util/Converters.h"
 #include "util/Formatting.h"
@@ -143,6 +144,7 @@ void InstanceCompletionQuery::addCompletions(std::vector<lsp::CompletionItem>& r
                                              const Indexer& indexer,
                                              const CompletionContext& context) {
     std::unordered_set<std::string_view> seenNames;
+    auto first = results.size();
 
     indexer.forEachSymbol([&](const std::string& name, const Indexer::GlobalSymbolLoc& entry) {
         if (!seenNames.insert(name).second)
@@ -150,6 +152,7 @@ void InstanceCompletionQuery::addCompletions(std::vector<lsp::CompletionItem>& r
 
         std::string detail;
         std::optional<std::string> insertText;
+        lsp::CompletionItemKind kind = lsp::CompletionItemKind::Module;
         switch (entry.kind) {
             case syntax::SyntaxKind::ModuleDeclaration:
                 if (context.kind != CompletionContextKind::ModuleMember)
@@ -157,16 +160,23 @@ void InstanceCompletionQuery::addCompletions(std::vector<lsp::CompletionItem>& r
                 detail = " Module";
                 break;
             case syntax::SyntaxKind::InterfaceDeclaration:
+                kind = lsp::CompletionItemKind::Interface;
                 detail = " Interface";
                 if (context.kind != CompletionContextKind::ModuleMember)
                     insertText = name;
                 break;
             case syntax::SyntaxKind::PackageDeclaration:
+                // A package is only usable as a scope, so it is noise in an expression
+                if (context.kind == CompletionContextKind::Expression ||
+                    context.kind == CompletionContextKind::Procedural) {
+                    return;
+                }
                 detail = " Package";
                 break;
             case syntax::SyntaxKind::ClassDeclaration:
                 if (context.kind == CompletionContextKind::Expression)
                     return;
+                kind = lsp::CompletionItemKind::Class;
                 detail = " Class";
                 break;
             default:
@@ -178,11 +188,13 @@ void InstanceCompletionQuery::addCompletions(std::vector<lsp::CompletionItem>& r
                 lsp::CompletionItemLabelDetails{
                     .detail = detail,
                 },
-            .kind = lsp::CompletionItemKind::Module,
+            .kind = kind,
             .filterText = name,
             .insertText = insertText,
         });
     });
+
+    rankCompletions(results, first, rank::Library);
 }
 
 void InstanceCompletionQuery::resolveModuleInstance(const syntax::ModuleHeaderSyntax& header,

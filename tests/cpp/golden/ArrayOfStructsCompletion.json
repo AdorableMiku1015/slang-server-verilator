@@ -7,7 +7,7 @@
           "detail": " logic[7:0]",
           "description": "transaction_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic [7:0] addr;\n````"
@@ -33,7 +33,7 @@
           "detail": " logic[31:0]",
           "description": "transaction_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic [31:0] data;\n````"
@@ -59,7 +59,7 @@
           "detail": " logic",
           "description": "transaction_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic valid;\n````"
@@ -89,7 +89,7 @@
           "detail": " logic[7:0]",
           "description": "transaction_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic [7:0] addr;\n````"
@@ -115,7 +115,7 @@
           "detail": " logic[31:0]",
           "description": "transaction_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic [31:0] data;\n````"
@@ -141,7 +141,7 @@
           "detail": " logic",
           "description": "transaction_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic valid;\n````"
@@ -171,7 +171,7 @@
           "detail": " logic[15:0]",
           "description": "nested_transaction_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic [15:0] id;\n````"
@@ -197,7 +197,7 @@
           "detail": " transaction_t",
           "description": "nested_transaction_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\ntransaction_t txn;\n````"
@@ -223,7 +223,7 @@
           "detail": " logic[7:0]",
           "description": "transaction_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic [7:0] addr;\n````"
@@ -249,7 +249,7 @@
           "detail": " logic[31:0]",
           "description": "transaction_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic [31:0] data;\n````"
@@ -275,7 +275,7 @@
           "detail": " logic",
           "description": "transaction_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic valid;\n````"
@@ -305,7 +305,7 @@
           "detail": " logic[7:0]",
           "description": "transaction_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic [7:0] addr;\n````"
@@ -331,7 +331,7 @@
           "detail": " logic[31:0]",
           "description": "transaction_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic [31:0] data;\n````"
@@ -357,7 +357,7 @@
           "detail": " logic",
           "description": "transaction_t"
         },
-        "kind": "Property",
+        "kind": "Field",
         "documentation": {
           "kind": "markdown",
           "value": "````systemverilog\nlogic valid;\n````"

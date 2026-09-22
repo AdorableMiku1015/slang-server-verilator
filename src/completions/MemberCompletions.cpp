@@ -158,7 +158,9 @@ public:
                         const std::shared_ptr<SlangDoc>& doc,
                         const CompletionContext& context) const final {
         INFO("General completions with context: {}", toString(context.kind));
+        auto libraryFirst = results.size();
         InstanceCompletionQuery::addCompletions(results, getIndexer(dispatch), context);
+        rankCompletions(results, libraryFirst, rank::Library);
         if (context.scope) {
             addCompletions(results, context.scope, context.kind, context.scope, doc->getURI().str(),
                            followedByCall, resolvesCompletionEdits(dispatch));
@@ -333,44 +335,7 @@ std::unique_ptr<CompletionQuery> MemberCompletionQuery::createScopedAccess(
 }
 
 lsp::CompletionItemKind MemberCompletionQuery::getCompletionKind(const slang::ast::Symbol& symbol) {
-    switch (symbol.kind) {
-        case slang::ast::SymbolKind::Variable:
-        case slang::ast::SymbolKind::Net:
-            return lsp::CompletionItemKind::Variable;
-        case slang::ast::SymbolKind::Parameter:
-            return lsp::CompletionItemKind::TypeParameter;
-        case slang::ast::SymbolKind::TypeAlias: {
-            auto& typeAlias = symbol.as<slang::ast::TypeAliasType>();
-            if (typeAlias.isEnum()) {
-                return lsp::CompletionItemKind::Enum;
-            }
-            else {
-                return lsp::CompletionItemKind::Struct;
-            }
-        }
-        case slang::ast::SymbolKind::TypeParameter:
-            return lsp::CompletionItemKind::Struct;
-        case slang::ast::SymbolKind::ClassType:
-        case slang::ast::SymbolKind::GenericClassDef:
-            return lsp::CompletionItemKind::Class;
-        case slang::ast::SymbolKind::Subroutine:
-            return lsp::CompletionItemKind::Function;
-        case slang::ast::SymbolKind::Port:
-        case slang::ast::SymbolKind::InterfacePort:
-            return lsp::CompletionItemKind::Interface;
-        case slang::ast::SymbolKind::Instance:
-        case slang::ast::SymbolKind::InstanceArray:
-            return lsp::CompletionItemKind::Class;
-        case slang::ast::SymbolKind::EnumValue:
-            return lsp::CompletionItemKind::EnumMember;
-        case slang::ast::SymbolKind::GenerateBlock:
-        case slang::ast::SymbolKind::GenerateBlockArray:
-            // Ideally would be "Module" which looks like '{}', but we have to diff between
-            // actual module completions
-            return lsp::CompletionItemKind::Snippet;
-        default:
-            return lsp::CompletionItemKind::Property;
-    }
+    return toCompletionItemKind(symbol);
 };
 
 std::string getInstanceArrayCompletionDetail(const ast::InstanceArraySymbol& array) {
@@ -646,9 +611,11 @@ void MemberCompletionQuery::addCompletions(std::vector<lsp::CompletionItem>& res
                                            std::string_view documentUri, bool labelOnly,
                                            bool deferCallableEdit, bool isOriginalCall) {
 
+    auto scopeFirst = results.size();
     if (isOriginalCall && contextKind == CompletionContextKind::ModuleMember) {
         addKeywordCompletions(results);
     }
+    rankUnrankedCompletions(results, scopeFirst, rank::Keyword);
 
     if (!scope) {
         ERROR("No scope for member completion");
@@ -710,15 +677,17 @@ void MemberCompletionQuery::addCompletions(std::vector<lsp::CompletionItem>& res
             }
         }
 
-        // Add wildcard imports
+        // Add wildcard imports: their members are one step further away than the enclosing scopes
         if (isOriginalCall) {
             if (auto importData = currentScope->getWildcardImportData()) {
                 for (auto import : importData->wildcardImports) {
                     auto package = import->getPackage();
                     if (package != nullptr) {
                         INFO("Adding wildcard imports from package {}", package->name);
+                        auto importFirst = results.size();
                         addCompletions(results, package, contextKind, originalScope, documentUri,
                                        labelOnly, deferCallableEdit, false);
+                        rankUnrankedCompletions(results, importFirst, rank::Imported);
                     }
                 }
             }
@@ -735,6 +704,9 @@ void MemberCompletionQuery::addCompletions(std::vector<lsp::CompletionItem>& res
         prevSym = &currentScope->asSymbol();
         currentScope = parentSymbol.getParentScope();
     }
+
+    // Everything that is directly visible from the cursor
+    rankUnrankedCompletions(results, scopeFirst, rank::Scope);
 }
 
 void MemberCompletionQuery::resolve(CompletionDispatch& dispatch, lsp::CompletionItem& item,

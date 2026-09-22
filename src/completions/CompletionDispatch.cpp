@@ -115,11 +115,17 @@ bool isSeparatedOnlyByWhitespace(const slang::parsing::Token& token) {
     });
 }
 
+/// Items that name a module, interface, or class declaration, which can be instantiated
+bool isInstantiableKind(lsp::CompletionItemKind kind) {
+    return kind == lsp::CompletionItemKind::Module || kind == lsp::CompletionItemKind::Interface ||
+           kind == lsp::CompletionItemKind::Class;
+}
+
 void setCompletionEdit(lsp::CompletionItem& item, const lsp::Range& replacementRange,
                        bool followedByCall, bool followedByInstantiation) {
     // Existing calls and instances still resolve documentation but retain their source shape.
     if ((followedByCall && item.kind == lsp::CompletionItemKind::Constant) ||
-        (followedByInstantiation && item.kind == lsp::CompletionItemKind::Module)) {
+        (followedByInstantiation && item.kind && isInstantiableKind(*item.kind))) {
         item.insertText = item.label;
         item.insertTextFormat = lsp::InsertTextFormat::PlainText;
     }
@@ -127,7 +133,7 @@ void setCompletionEdit(lsp::CompletionItem& item, const lsp::Range& replacementR
     auto newText = item.insertText.value_or(item.label);
     auto useLabelOnly = (followedByCall &&
                          item.insertTextFormat == lsp::InsertTextFormat::Snippet) ||
-                        (followedByInstantiation && item.kind == lsp::CompletionItemKind::Module);
+                        (followedByInstantiation && item.kind && isInstantiableKind(*item.kind));
     if (useLabelOnly && item.insertTextFormat == lsp::InsertTextFormat::Snippet) {
         SnippetString escapedLabel;
         escapedLabel.appendText(item.label);
@@ -265,15 +271,24 @@ void CompletionDispatch::getCompletionItemResolve(lsp::CompletionItem& item,
         return;
     }
 
+    // Symbols that came out of the current analysis carry `data` and resolve against it; items
+    // from the workspace index and the built-in tables have none.
+    if (item.data) {
+        completions::MemberCompletionQuery::resolve(*this, item, ctx);
+        return;
+    }
+
     switch (*item.kind) {
         case lsp::CompletionItemKind::Constant:
             completions::MacroCompletionQuery::resolve(*this, item);
             break;
         case lsp::CompletionItemKind::Module:
+        case lsp::CompletionItemKind::Interface:
+        case lsp::CompletionItemKind::Class:
+            // Names of module, interface, and class declarations from the workspace index
             completions::InstanceCompletionQuery::resolve(*this, item);
             break;
         default:
-            completions::MemberCompletionQuery::resolve(*this, item, ctx);
             break;
     }
 }
