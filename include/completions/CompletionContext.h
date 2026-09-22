@@ -46,7 +46,7 @@ SLANG_ENUM(CompletionContextKind, CCK)
 
 #define CQK(x)                                                                          \
     x(Lexical) x(MemberAccess) x(ScopedAccess) x(StructAssign) x(StructMember) x(Macro) \
-        x(SystemSubroutine) x(InstantiationSuffix)
+        x(SystemSubroutine) x(InstantiationSuffix) x(InstancePorts)
 SLANG_ENUM(CompletionQueryKind, CQK)
 #undef CQK
 
@@ -96,6 +96,9 @@ struct CompletionContext {
 
     /// The scope at the completion location
     const slang::ast::Scope* scope = nullptr;
+
+    /// The location the completion was requested at
+    slang::SourceLocation location;
 
     /// The common ancestor of tokens before/after the location
     const slang::syntax::SyntaxNode* syntax = nullptr;

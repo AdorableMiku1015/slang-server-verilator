@@ -163,7 +163,7 @@ public:
         rankCompletions(results, libraryFirst, rank::Library);
         if (context.scope) {
             addCompletions(results, context.scope, context.kind, context.scope, doc->getURI().str(),
-                           followedByCall, resolvesCompletionEdits(dispatch));
+                           context, followedByCall, resolvesCompletionEdits(dispatch));
         }
     }
 };
@@ -307,7 +307,8 @@ public:
 
         INFO("Looking for scoped members in {}", targetScope->asSymbol().getHierarchicalPath());
         addCompletions(results, targetScope, CompletionContextKind::Expression, context.scope,
-                       doc->getURI().str(), followedByCall, resolvesCompletionEdits(dispatch));
+                       doc->getURI().str(), context, followedByCall,
+                       resolvesCompletionEdits(dispatch));
     }
 
 private:
@@ -337,6 +338,13 @@ std::unique_ptr<CompletionQuery> MemberCompletionQuery::createScopedAccess(
 lsp::CompletionItemKind MemberCompletionQuery::getCompletionKind(const slang::ast::Symbol& symbol) {
     return toCompletionItemKind(symbol);
 };
+
+lsp::CompletionItem MemberCompletionQuery::getSymbolCompletion(
+    const slang::ast::Symbol& symbol, const slang::ast::Scope* currentScope,
+    std::string_view documentUri) {
+    return getCompletion(symbol, currentScope, documentUri, /* labelOnly */ false,
+                         /* deferCallableEdit */ false);
+}
 
 std::string getInstanceArrayCompletionDetail(const ast::InstanceArraySymbol& array) {
     const ast::Symbol* element = &array;
@@ -603,13 +611,61 @@ void MemberCompletionQuery::resolve(const slang::ast::Symbol& symbol, lsp::Compl
     }
 }
 
+/// When the cursor is the right hand side of an assignment to a symbol with an enum type, the
+/// values of that enum are what the user most likely wants, so they are offered in the top layer
+/// even when the enum lives in a package or behind a typedef.
+void MemberCompletionQuery::addExpectedEnumCompletions(std::vector<lsp::CompletionItem>& results,
+                                                       const CompletionContext& context,
+                                                       const slang::ast::Scope* originalScope,
+                                                       std::string_view documentUri,
+                                                       std::unordered_set<std::string>* seen) {
+
+    if (!context.analysis)
+        return;
+
+    auto& analysis = *context.analysis;
+    auto* op = analysis.syntaxes.getTokenBefore(context.location);
+    if (!op ||
+        (op->kind != parsing::TokenKind::Equals && op->kind != parsing::TokenKind::LessThanEquals &&
+         op->kind != parsing::TokenKind::ColonEquals)) {
+        return;
+    }
+
+    auto* lhsToken = analysis.syntaxes.getTokenBefore(op->location());
+    auto* symbol = lhsToken ? analysis.getSymbolAtToken(lhsToken) : nullptr;
+    auto* value = symbol ? symbol->as_if<ast::ValueSymbol>() : nullptr;
+    if (!value)
+        return;
+
+    auto& type = value->getType().getCanonicalType();
+    if (!type.isEnum())
+        return;
+
+    std::unordered_set<std::string> existing;
+    for (auto& item : results)
+        existing.insert(item.label);
+
+    for (auto& enumValue : type.as<ast::EnumType>().values()) {
+        if (enumValue.name.empty())
+            continue;
+        auto item = getCompletion(enumValue, originalScope, documentUri, /* labelOnly */ false,
+                                  /* deferCallableEdit */ false);
+        if (existing.insert(item.label).second) {
+            seen->insert(item.label);
+            item.sortText = std::string(rank::Scope);
+            results.push_back(std::move(item));
+        }
+    }
+}
+
 /// Get completions for members in a scope, including the enclosing compilation unit
-void MemberCompletionQuery::addCompletions(std::vector<lsp::CompletionItem>& results,
-                                           const slang::ast::Scope* scope,
-                                           CompletionContextKind contextKind,
-                                           const slang::ast::Scope* originalScope,
-                                           std::string_view documentUri, bool labelOnly,
-                                           bool deferCallableEdit, bool isOriginalCall) {
+void MemberCompletionQuery::addCompletions(
+    std::vector<lsp::CompletionItem>& results, const slang::ast::Scope* scope,
+    CompletionContextKind contextKind, const slang::ast::Scope* originalScope,
+    std::string_view documentUri, const CompletionContext& context, bool labelOnly,
+    bool deferCallableEdit, bool isOriginalCall, std::unordered_set<std::string>* seenLabels) {
+    std::unordered_set<std::string> localSeen;
+    auto* seen = seenLabels ? seenLabels : &localSeen;
 
     auto scopeFirst = results.size();
     if (isOriginalCall && contextKind == CompletionContextKind::ModuleMember) {
@@ -617,16 +673,51 @@ void MemberCompletionQuery::addCompletions(std::vector<lsp::CompletionItem>& res
     }
     rankUnrankedCompletions(results, scopeFirst, rank::Keyword);
 
+    if (isOriginalCall)
+        addExpectedEnumCompletions(results, context, originalScope, documentUri, seen);
+
     if (!scope) {
         ERROR("No scope for member completion");
         return;
     }
+
+    // In a procedural block a local declaration has to come before it is used, so offering one
+    // that comes later would only produce a diagnostic. In a module, package, or compilation unit
+    // forward references are fine.
+    auto declaredAfterCursor = [&](const slang::ast::Symbol& member) {
+        if (!context.analysis || !member.location ||
+            member.location.offset() <= context.location.offset()) {
+            return false;
+        }
+        auto* parent = member.getParentScope();
+        if (!parent)
+            return false;
+        switch (parent->asSymbol().kind) {
+            case slang::ast::SymbolKind::InstanceBody:
+            case slang::ast::SymbolKind::CompilationUnit:
+            case slang::ast::SymbolKind::Package:
+            case slang::ast::SymbolKind::Root:
+                return false;
+            default:
+                return true;
+        }
+    };
 
     // Only show types (not signals/variables) when at the top level of a module body
     // or in a port list — these are declaration positions.
     bool typesOnly = (contextKind == CompletionContextKind::ModuleMember ||
                       contextKind == CompletionContextKind::PortList);
 
+    // The first symbol with a given name is the one the cursor would actually resolve to, so
+    // anything shadowed by it is left out. The set is shared with wildcard imports, whose members
+    // are further away than everything already offered.
+    auto pushCompletion = [&](const slang::ast::Symbol& member) {
+        if (declaredAfterCursor(member))
+            return;
+        auto item = getCompletion(member, originalScope, documentUri, labelOnly, deferCallableEdit);
+        if (seen->insert(item.label).second)
+            results.push_back(std::move(item));
+    };
     // Walk up through the compilation unit, but don't include the root's design hierarchy.
     const slang::ast::Scope* currentScope = scope;
     const slang::ast::Symbol* prevSym = nullptr;
@@ -660,20 +751,15 @@ void MemberCompletionQuery::addCompletions(std::vector<lsp::CompletionItem>& res
 
             // unwrap enum values, explicit imports
             if (slang::ast::TransparentMemberSymbol::isKind(member.kind)) {
-                auto& wrapped = member.as<slang::ast::TransparentMemberSymbol>().wrapped;
-                results.push_back(getCompletion(wrapped, originalScope, documentUri, labelOnly,
-                                                deferCallableEdit));
+                pushCompletion(member.as<slang::ast::TransparentMemberSymbol>().wrapped);
             }
             else if (slang::ast::ExplicitImportSymbol::isKind(member.kind)) {
                 auto importSym = member.as<slang::ast::ExplicitImportSymbol>().importedSymbol();
-                if (importSym) {
-                    results.push_back(getCompletion(*importSym, originalScope, documentUri,
-                                                    labelOnly, deferCallableEdit));
-                }
+                if (importSym)
+                    pushCompletion(*importSym);
             }
             else {
-                results.push_back(getCompletion(member, originalScope, documentUri, labelOnly,
-                                                deferCallableEdit));
+                pushCompletion(member);
             }
         }
 
@@ -686,7 +772,7 @@ void MemberCompletionQuery::addCompletions(std::vector<lsp::CompletionItem>& res
                         INFO("Adding wildcard imports from package {}", package->name);
                         auto importFirst = results.size();
                         addCompletions(results, package, contextKind, originalScope, documentUri,
-                                       labelOnly, deferCallableEdit, false);
+                                       context, labelOnly, deferCallableEdit, false, seen);
                         rankUnrankedCompletions(results, importFirst, rank::Imported);
                     }
                 }

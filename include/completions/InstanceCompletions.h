@@ -15,13 +15,39 @@
 #include <string_view>
 #include <vector>
 
+#include "slang/ast/symbols/InstanceSymbols.h"
 #include "slang/syntax/SyntaxTree.h"
 
 namespace slang::parsing {
 class Token;
 }
 
+namespace slang::syntax {
+struct ParameterValueAssignmentSyntax;
+class SyntaxNode;
+} // namespace slang::syntax
+
 namespace server::completions {
+
+/// Completes the named ports of the instance whose connection list contains the cursor, or its
+/// parameter overrides when the cursor is in the `#(...)` list. Already connected ports are left
+/// out, and the insertion uses the `.port(port)` form that the surrounding code already uses.
+class InstancePortCompletionQuery : public CompletionQuery {
+public:
+    /// @param instance the instantiated module or interface
+    /// @param parameterList set to complete the `#(...)` list instead of the ports
+    /// @param current the connection or assignment being typed, which is still offered
+    /// @param leadingDot insert a `.` because the source does not have one yet
+    /// @param fallback general completions to append after the ports
+    static std::unique_ptr<CompletionQuery> create(
+        lsp::Range replacementRange, const slang::ast::InstanceSymbol& instance,
+        const slang::syntax::ParameterValueAssignmentSyntax* parameterList, bool parameters,
+        const slang::syntax::SyntaxNode* current, bool leadingDot,
+        std::unique_ptr<CompletionQuery> fallback);
+
+protected:
+    using CompletionQuery::CompletionQuery;
+};
 
 /// Query, candidate generation, and resolver for indexed design-unit completions.
 class InstanceCompletionQuery : public CompletionQuery {

@@ -2118,3 +2118,174 @@ TEST_CASE("CompletionRankingAndKinds") {
         CHECK(findItem(items, "base_pkg") == items.end());
     }
 }
+
+TEST_CASE("InstancePortCompletion") {
+    // Port connections are the one place where the names to offer are not in scope: they belong to
+    // the instantiated module. The generic completions had no idea about them.
+    ServerHarness server;
+
+    auto doc = server.openFile("instance_port_completion.sv", R"(
+    module sub_module #(
+        parameter int WIDTH = 8,
+        parameter int DEPTH = 4
+    ) (
+        input logic clk,
+        input logic rst_n,
+        input logic [WIDTH-1:0] din,
+        output logic [WIDTH-1:0] dout,
+        output logic unrelated
+    );
+    endmodule
+
+    module instance_port_completion;
+        logic clk, rst_n;
+        logic [7:0] din, dout;
+
+        sub_module #(
+            .WIDTH(4),
+            .
+        ) u_sub (
+            .clk(clk),
+            .
+        );
+    endmodule
+    )");
+    doc.save();
+
+    auto findItem = [](std::vector<CompletionHandle>& items, std::string_view label) {
+        return std::find_if(items.begin(), items.end(), [&](const CompletionHandle& item) {
+            return item.m_item.label == label;
+        });
+    };
+
+    SECTION("unconnected ports, with the expression as a placeholder") {
+        auto items = doc.after("            .clk(clk),\n            .").getCompletions(".");
+
+        auto rst = findItem(items, "rst_n");
+        REQUIRE(rst != items.end());
+        REQUIRE(rst->m_item.insertText);
+        CHECK(*rst->m_item.insertText == "rst_n(${1:rst_n}),");
+        CHECK(rst->m_item.insertTextFormat == lsp::InsertTextFormat::Snippet);
+        CHECK(rst->m_item.kind == lsp::CompletionItemKind::Variable);
+        REQUIRE(rst->m_item.labelDetails);
+        CHECK(rst->m_item.labelDetails->detail == " input logic");
+
+        // `clk` already has a connection, so it is not offered as a port to connect. The signal of
+        // the enclosing module may still show up from the general completions.
+        auto portItems = std::count_if(items.begin(), items.end(), [](const CompletionHandle& i) {
+            return i.m_item.label == "clk" && i.m_item.insertText &&
+                   i.m_item.insertText->starts_with("clk(${1:");
+        });
+        CHECK(portItems == 0);
+
+        // Resolving fills in the declaration, which the client asks for when the item is picked
+        rst->resolve();
+        CHECK(rst->m_item.documentation);
+    }
+
+    SECTION("unassigned parameters in the override list") {
+        auto items = doc.after("            .WIDTH(4),\n            .").getCompletions(".");
+
+        auto depth = findItem(items, "DEPTH");
+        REQUIRE(depth != items.end());
+        REQUIRE(depth->m_item.insertText);
+        // No symbol named DEPTH is in scope here, so the value is left for the user to fill in
+        CHECK(*depth->m_item.insertText == "DEPTH(${1:}),");
+        CHECK(depth->m_item.kind == lsp::CompletionItemKind::Constant);
+
+        // WIDTH already has a value
+        CHECK(findItem(items, "WIDTH") == items.end());
+    }
+
+    SECTION("a dot inside a connection is an expression, not a port name") {
+        auto items = doc.after("            .clk(").getCompletions(".");
+        auto ports = std::count_if(items.begin(), items.end(), [](const CompletionHandle& item) {
+            return item.m_item.insertText && item.m_item.insertText->starts_with("rst_n(${1:");
+        });
+        CHECK(ports == 0);
+    }
+}
+
+TEST_CASE("ExpectedEnumValuesComeFirst") {
+    ServerHarness server;
+
+    auto doc = server.openFile("enum_assignment.sv", R"(
+    package state_pkg;
+        typedef enum logic [1:0] {IDLE, RUN, DONE} state_t;
+    endpackage
+
+    module enum_assignment;
+        import state_pkg::*;
+        state_t state;
+        logic other;
+
+        initial begin
+            state = ;
+        end
+    endmodule
+    )");
+    doc.save();
+
+    auto items = doc.after("state = ").getCompletions();
+    auto findItem = [&](std::string_view label) {
+        return std::find_if(items.begin(), items.end(), [&](const CompletionHandle& item) {
+            return item.m_item.label == label;
+        });
+    };
+
+    auto idle = findItem("IDLE");
+    REQUIRE(idle != items.end());
+    CHECK(idle->m_item.kind == lsp::CompletionItemKind::EnumMember);
+    // Offered even though the enum value lives in a package, and ranked with the scope symbols
+    CHECK(idle->m_item.sortText == "0");
+    CHECK(findItem("RUN") != items.end());
+    CHECK(findItem("DONE") != items.end());
+
+    // Each value is offered once
+    auto count = std::count_if(items.begin(), items.end(), [](const CompletionHandle& item) {
+        return item.m_item.label == "IDLE";
+    });
+    CHECK(count == 1);
+}
+
+TEST_CASE("ProceduralCompletionRespectsDeclarationOrder") {
+    ServerHarness server;
+
+    auto doc = server.openFile("declaration_order.sv", R"(
+    module declaration_order;
+        logic module_signal;
+        logic value;
+
+        initial begin
+            int value;
+
+            value = ;
+            int later_var;
+        end
+    endmodule
+    )");
+    doc.save();
+
+    auto items = doc.after("value = ").getCompletions();
+    auto findItem = [&](std::string_view label) {
+        return std::find_if(items.begin(), items.end(), [&](const CompletionHandle& item) {
+            return item.m_item.label == label;
+        });
+    };
+
+    // A local declared after the cursor cannot be used yet
+    CHECK(findItem("later_var") == items.end());
+
+    // Module level symbols are still visible (forward references are fine there)
+    CHECK(findItem("module_signal") != items.end());
+
+    // The local `value` shadows the module level one, so it is offered once, as the local
+    auto shadowed = findItem("value");
+    REQUIRE(shadowed != items.end());
+    REQUIRE(shadowed->m_item.labelDetails);
+    CHECK(shadowed->m_item.labelDetails->detail == " int");
+    auto count = std::count_if(items.begin(), items.end(), [](const CompletionHandle& item) {
+        return item.m_item.label == "value";
+    });
+    CHECK(count == 1);
+}

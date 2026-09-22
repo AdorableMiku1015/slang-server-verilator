@@ -40,6 +40,9 @@ Completions are currently provided for the following constructs:
 - Modules and interfaces
 - Functions and macros
 - Hierarchical references and struct members
+- Port and parameter lists of an instance: inside `u_inst (` the ports of the instantiated module
+  that are not connected yet, and inside `#(` its unassigned parameters, inserted as `.port(port),`
+  with the expression selected so it can be typed over
 
 ![goto-refs](/assets/images/completions.gif)
 
@@ -50,6 +53,10 @@ anywhere in the workspace. Clients sort by `sortText` before anything else and k
 ordering within a layer. Item kinds follow the symbol, grouped the same way as the
 [semantic token types](semantic-tokens.md), so a data port is not shown as an interface and a
 parameter is not shown as a type.
+
+What is offered depends on the cursor: a local declared after it is left out (a symbol has to be
+declared before it is used in a procedural block), a shadowed symbol appears once as the one that
+would actually resolve, and the values of the enum being assigned to are ranked first.
 
 Planned completions:
 

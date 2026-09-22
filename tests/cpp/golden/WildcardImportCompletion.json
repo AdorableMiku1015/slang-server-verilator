@@ -275,32 +275,6 @@
         }
       },
       {
-        "label": "max_val",
-        "labelDetails": {
-          "detail": " int"
-        },
-        "kind": "Variable",
-        "documentation": {
-          "kind": "markdown",
-          "value": "````systemverilog\nint max_val = find_max();\n````"
-        },
-        "sortText": "0",
-        "filterText": "max_val",
-        "textEdit": {
-          "range": {
-            "start": {
-              "line": 56,
-              "character": 28
-            },
-            "end": {
-              "line": 56,
-              "character": 28
-            }
-          },
-          "newText": "max_val"
-        }
-      },
-      {
         "label": "my_point",
         "labelDetails": {
           "detail": " point_t"

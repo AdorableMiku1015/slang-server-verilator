@@ -10,6 +10,7 @@
 
 #include "Indexer.h"
 #include "completions/CompletionDispatch.h"
+#include "completions/MemberCompletions.h"
 #include "lsp/SnippetString.h"
 #include "util/Converters.h"
 #include "util/Formatting.h"
@@ -17,6 +18,10 @@
 #include <fmt/format.h>
 #include <unordered_set>
 
+#include "slang/ast/symbols/ParameterSymbols.h"
+#include "slang/ast/symbols/PortSymbols.h"
+#include "slang/ast/symbols/ValueSymbol.h"
+#include "slang/ast/types/TypePrinter.h"
 #include "slang/parsing/Token.h"
 #include "slang/parsing/TokenKind.h"
 #include "slang/syntax/AllSyntax.h"
@@ -308,6 +313,202 @@ void InstanceCompletionQuery::resolve(CompletionDispatch& dispatch, lsp::Complet
 
     resolve(*maybeTree.value(), name, item, excludeName);
     updateCompletionEditText(item);
+}
+
+namespace {
+
+/// Type detail for a port or parameter, like " logic[31:0]"
+std::string getTypeDetailString(const ast::Type& type) {
+    ast::TypePrinter printer;
+    printer.options.elideScopeNames = true;
+    printer.options.skipTypeDefs = true;
+    printer.append(type);
+    return printer.toString();
+}
+
+/// The `.port(port)` insertion, with the expression as a placeholder so the cursor lands in it.
+/// The implicit `.port` form is used when the source already names the port, which is what the
+/// surrounding code does.
+std::string getConnectionSnippet(std::string_view name, bool hasExpression) {
+    SnippetString output;
+    output.appendText("." + std::string(name) + "(");
+    if (hasExpression)
+        output.appendPlaceholder(std::string(name));
+    else
+        output.appendPlaceholder("");
+    output.appendText("),");
+    return std::string(output.getValue());
+}
+
+class InstancePortCompletionQueryImpl final : public InstancePortCompletionQuery {
+public:
+    InstancePortCompletionQueryImpl(lsp::Range replacementRange,
+                                    const ast::InstanceSymbol& instance,
+                                    const syntax::ParameterValueAssignmentSyntax* parameterList,
+                                    bool parameters, const syntax::SyntaxNode* current,
+                                    bool leadingDot, std::unique_ptr<CompletionQuery> fallback) :
+        InstancePortCompletionQuery(std::move(replacementRange)), instance(instance),
+        parameterList(parameterList), parameters(parameters), current(current),
+        leadingDot(leadingDot), fallback(std::move(fallback)) {}
+
+    CompletionQueryKind kind() const final { return CompletionQueryKind::InstancePorts; }
+
+    void getCompletions(std::vector<lsp::CompletionItem>& results, CompletionDispatch& dispatch,
+                        const std::shared_ptr<SlangDoc>& doc,
+                        const CompletionContext& context) const final {
+        auto first = results.size();
+        auto documentUri = doc->getURI().str();
+        if (parameters)
+            addParameters(results, context, documentUri);
+        else
+            addPorts(results, context, documentUri);
+        INFO("Returning {} {} completions for {}", results.size() - first,
+             parameters ? "parameter" : "port", instance.body.getDefinition().name);
+        rankCompletions(results, first, rank::Scope);
+
+        // The connection list is also a place for expressions, so keep the general completions
+        if (fallback)
+            fallback->getCompletions(results, dispatch, doc, context);
+    }
+
+private:
+    /// The name of the connection or assignment the cursor is in, which is still being typed and
+    /// must stay in the list even though the analysis already sees it as connected
+    std::string_view currentName() const {
+        if (!current)
+            return {};
+        if (current->kind == syntax::SyntaxKind::NamedPortConnection)
+            return current->as<syntax::NamedPortConnectionSyntax>().name.valueText();
+        if (current->kind == syntax::SyntaxKind::NamedParamAssignment)
+            return current->as<syntax::NamedParamAssignmentSyntax>().name.valueText();
+        return {};
+    }
+
+    void addPorts(std::vector<lsp::CompletionItem>& results, const CompletionContext& context,
+                  std::string_view documentUri) const {
+        // Which ports the source connects. The analysis has a connection for every port, including
+        // the ones that are not connected at all, so the syntax is what tells them apart.
+        auto typing = currentName();
+        std::unordered_set<std::string_view> connected;
+        if (auto* syntax = instance.getSyntax();
+            syntax && syntax->kind == syntax::SyntaxKind::HierarchicalInstance) {
+            auto& instanceSyntax = syntax->as<syntax::HierarchicalInstanceSyntax>();
+            for (auto* connection : instanceSyntax.connections) {
+                auto* named = connection ? connection->as_if<syntax::NamedPortConnectionSyntax>()
+                                         : nullptr;
+                if (named && named->name.valueText() != typing)
+                    connected.insert(named->name.valueText());
+            }
+        }
+
+        for (auto* symbol : instance.body.getPortList()) {
+            if (!symbol || symbol->name.empty() || connected.contains(symbol->name))
+                continue;
+            if (auto* multi = symbol->as_if<ast::MultiPortSymbol>()) {
+                for (auto* port : multi->ports) {
+                    if (!connected.contains(port->name))
+                        addPort(results, *port, context, documentUri);
+                }
+                continue;
+            }
+            addPort(results, *symbol, context, documentUri);
+        }
+    }
+
+    void addPort(std::vector<lsp::CompletionItem>& results, const ast::Symbol& port,
+                 const CompletionContext& context, std::string_view documentUri) const {
+        auto* portSymbol = port.as_if<ast::PortSymbol>();
+        auto* ifacePort = port.as_if<ast::InterfacePortSymbol>();
+        if (!portSymbol && !ifacePort)
+            return;
+
+        std::string detail;
+        if (ifacePort) {
+            detail = " interface";
+            if (ifacePort->interfaceDef)
+                detail += " " + std::string(ifacePort->interfaceDef->name);
+        }
+        else {
+            detail = " " + portString(portSymbol->direction) + " " +
+                     getTypeDetailString(portSymbol->getType());
+        }
+
+        results.push_back(getConnectionItem(port, port.name, detail, context, documentUri));
+    }
+
+    void addParameters(std::vector<lsp::CompletionItem>& results, const CompletionContext& context,
+                       std::string_view documentUri) const {
+        // Parameters that already have a value in the `#(...)` list are done
+        auto typing = currentName();
+        std::unordered_set<std::string_view> assigned;
+        for (auto* assignment :
+             parameterList ? parameterList->parameters
+                           : syntax::SeparatedSyntaxList<syntax::ParamAssignmentSyntax>{}) {
+            if (!assignment)
+                continue;
+            if (auto* named = assignment->as_if<syntax::NamedParamAssignmentSyntax>()) {
+                if (named->name.valueText() != typing)
+                    assigned.insert(named->name.valueText());
+            }
+        }
+
+        for (auto* param : instance.body.getParameters()) {
+            if (!param || param->symbol.name.empty() || param->isLocalParam() ||
+                assigned.contains(param->symbol.name)) {
+                continue;
+            }
+
+            std::string detail;
+            if (auto* value = param->symbol.as_if<ast::ValueSymbol>())
+                detail = " " + getTypeDetailString(value->getType());
+            else
+                detail = " type";
+
+            results.push_back(
+                getConnectionItem(param->symbol, param->symbol.name, detail, context, documentUri));
+        }
+    }
+
+    lsp::CompletionItem getConnectionItem(const ast::Symbol& symbol, std::string_view name,
+                                          std::string_view detail, const CompletionContext& context,
+                                          std::string_view documentUri) const {
+        // The implicit `.name` form needs a symbol with that name in scope, so only offer to
+        // repeat the name when there is one
+        auto hasExpression = context.scope ? context.scope->find(name) != nullptr : false;
+
+        auto snippet = getConnectionSnippet(name, hasExpression);
+        if (!leadingDot)
+            snippet.erase(0, 1);
+
+        // Built like any other symbol item so that resolving it fills in the documentation
+        auto item = MemberCompletionQuery::getSymbolCompletion(symbol, context.scope, documentUri);
+        item.labelDetails = lsp::CompletionItemLabelDetails{
+            .detail = std::string(detail),
+        };
+        item.filterText = std::string(name);
+        item.insertText = std::move(snippet);
+        item.insertTextFormat = lsp::InsertTextFormat::Snippet;
+        item.sortText = std::string(rank::Scope);
+        return item;
+    }
+
+    const ast::InstanceSymbol& instance;
+    const syntax::ParameterValueAssignmentSyntax* parameterList;
+    bool parameters;
+    const syntax::SyntaxNode* current;
+    bool leadingDot;
+    std::unique_ptr<CompletionQuery> fallback;
+};
+
+} // namespace
+
+std::unique_ptr<CompletionQuery> InstancePortCompletionQuery::create(
+    lsp::Range replacementRange, const ast::InstanceSymbol& instance,
+    const syntax::ParameterValueAssignmentSyntax* parameterList, bool parameters,
+    const syntax::SyntaxNode* current, bool leadingDot, std::unique_ptr<CompletionQuery> fallback) {
+    return std::make_unique<InstancePortCompletionQueryImpl>(std::move(replacementRange), instance,
+                                                             parameterList, parameters, current,
+                                                             leadingDot, std::move(fallback));
 }
 
 } // namespace server::completions

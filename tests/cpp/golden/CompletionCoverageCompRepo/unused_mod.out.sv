@@ -71,20 +71,13 @@ module unused_mod
 
             alu #(
                 .WIDTH(32)
-//               ^^^^^ MissingCompletion[WIDTH] Context[Expression] Trigger[.] Items[0]
             ) gen_alu_inst (
                 .a(gen_alu_a),
-//               ^ MissingCompletion[a] Context[Expression] Trigger[.] Items[0]
                 .b(gen_alu_b),
-//               ^ MissingCompletion[b] Context[Expression] Trigger[.] Items[0]
                 .op(gen_alu_op),
-//               ^^ MissingCompletion[op] Context[Expression] Trigger[.] Items[0]
                 .result(gen_alu_result),
-//               ^^^^^^ MissingCompletion[result] Context[Expression] Trigger[.] Items[0]
                 .zero(gen_alu_zero),
-//               ^^^^ MissingCompletion[zero] Context[Expression] Trigger[.] Items[0]
                 .overflow(gen_alu_overflow)
-//               ^^^^^^^^ MissingCompletion[overflow] Context[Expression] Trigger[.] Items[0]
             );
         end
     endgenerate
