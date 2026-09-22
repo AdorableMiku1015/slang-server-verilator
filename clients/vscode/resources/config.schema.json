@@ -98,6 +98,10 @@
           "$ref": "#/$defs/Config__SemanticTokens",
           "description": "Semantic token highlighting settings"
         },
+        "logging": {
+          "$ref": "#/$defs/Config__Logging",
+          "description": "Logging settings, also settable with the --log-level command line flag"
+        },
         "builds": {
           "type": "array",
           "description": "Builds for direct .f selection or command-based .f generation",
@@ -213,6 +217,37 @@
         "macroArgNames": {
           "type": "integer",
           "description": "Macro argument hints: 0=off, N=only calls with >=N args"
+        }
+      },
+      "required": []
+    },
+    "Config__Logging": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "description": "How much of the log to keep. A level keeps everything below it, so 'error' only shows failures and 'debug' shows the per-request detail that a client generates while typing.",
+          "oneOf": [
+            {
+              "description": "Log nothing.",
+              "const": "off"
+            },
+            {
+              "description": "Log only failures.",
+              "const": "error"
+            },
+            {
+              "description": "Log failures and warnings.",
+              "const": "warn"
+            },
+            {
+              "description": "Add what the server is doing: startup, indexing, reloads. The default.",
+              "const": "info"
+            },
+            {
+              "description": "Add per-request detail, such as every completion and analysis.",
+              "const": "debug"
+            }
+          ]
         }
       },
       "required": []

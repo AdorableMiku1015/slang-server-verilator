@@ -68,7 +68,7 @@ protected:
                 return rfl::to_generic(result);
             }
         };
-        std::cerr << "Registered command: " << name << "\n";
+        server::logging::debug("Registered command: {}", name);
     }
 
     /// Register an rpc method with the given Params, Return, and Method (name)
@@ -89,12 +89,10 @@ protected:
     /// a workspace edit which the client will apply to the workspace.
     std::optional<lsp::LSPAny> getWorkspaceExecuteCommand(const lsp::ExecuteCommandParams& params,
                                                           const RequestContext& ctx = {}) {
-        std::cerr << " <---" << params.command << "(" << rfl::json::write(params.arguments)
-                  << ")\n";
+        server::logging::debug(" <---{}({})", params.command, rfl::json::write(params.arguments));
         auto command = m_commands.find(params.command);
         if (command == m_commands.end()) {
-            std::cerr << "Unknown command: " << params.command << "\n";
-            std::cerr << " -/-> \n";
+            server::logging::warn("Unknown command: {}", params.command);
             return std::nullopt;
         }
         // returns are rearely used
@@ -114,7 +112,7 @@ protected:
         }
         auto x = command->second(args, ctx);
 
-        std::cerr << " ---> " << params.command << "\n";
+        server::logging::debug(" ---> {}", params.command);
 
         // INFO("Command {} returned: {}", params.command, rfl::json::write(x));
         return x;

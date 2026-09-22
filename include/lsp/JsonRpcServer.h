@@ -185,25 +185,25 @@ protected:
                 auto target = it->second;
                 if (!target.hasStarted() || target.supportsCancellation()) {
                     target.cancel();
-                    target.info("<--- $/cancelRequest - cancelling {}", target.method());
+                    target.debug("<--- $/cancelRequest - cancelling {}", target.method());
                 }
                 else {
-                    target.info("<--- $/cancelRequest - {} does not support cancellation",
-                                target.method());
+                    target.debug("<--- $/cancelRequest - {} does not support cancellation",
+                                 target.method());
                 }
                 return;
             }
         }
 
         RequestContext cancelCtx("$/cancelRequest", std::move(rpcId), false);
-        cancelCtx.info("<--- $/cancelRequest - cancel requested but already returned");
+        cancelCtx.debug("<--- $/cancelRequest - cancel requested but already returned");
     }
 
     void startRequest(const RequestContext& ctx) {
         std::lock_guard lock(cancellationMutex);
         ctx.throwIfCancelled("before handler");
         ctx.markStarted();
-        ctx.info("Started {}", ctx.method());
+        ctx.debug("Started {}", ctx.method());
     }
 
     /// Hook for the implementation: called when a handler failed but the server carried on, so the
@@ -232,7 +232,7 @@ protected:
             explicit MessageLog(RequestContext ctx, bool logStart) :
                 ctx(std::move(ctx)), enabled(this->ctx.method() != "$/cancelRequest") {
                 if (enabled && logStart)
-                    this->ctx.startInfo("<--- {}", this->ctx.method());
+                    this->ctx.debug("<--- {}", this->ctx.method());
             }
 
             ~MessageLog() {
@@ -241,22 +241,22 @@ protected:
 
                 if (cancellationPoint) {
                     if (ctx.rpcId()) {
-                        ctx.info("-/-> {} (request cancelled {})", ctx.method(),
-                                 *cancellationPoint);
+                        ctx.debug("-/-> {} (request cancelled {})", ctx.method(),
+                                  *cancellationPoint);
                     }
                     else {
-                        ctx.info("---- {} (notification superseded {})", ctx.method(),
-                                 *cancellationPoint);
+                        ctx.debug("---- {} (notification superseded {})", ctx.method(),
+                                  *cancellationPoint);
                     }
                 }
                 else if (error) {
                     ctx.error("-/-> {} Error: {}", ctx.method(), *error);
                 }
                 else if (ctx.rpcId()) {
-                    ctx.info("---> {}", ctx.method());
+                    ctx.debug("---> {}", ctx.method());
                 }
                 else {
-                    ctx.info("---- {} (notification finished)", ctx.method());
+                    ctx.debug("---- {} (notification finished)", ctx.method());
                 }
             }
 
@@ -505,7 +505,7 @@ public:
             {
                 std::lock_guard lock(queueMutex);
                 printPendingSeparatorLocked();
-                ctx.startInfo("<--- {}", ctx.method());
+                ctx.debug("<--- {}", ctx.method());
                 queue.push_back({std::move(queuedRequest), std::move(ctx)});
             }
             queueCondition.notify_one();

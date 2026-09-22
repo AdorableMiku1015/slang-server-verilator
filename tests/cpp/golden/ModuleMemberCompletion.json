@@ -213,54 +213,6 @@
         }
       },
       {
-        "label": "mailbox",
-        "labelDetails": {
-          "detail": " ",
-          "description": "std"
-        },
-        "kind": "Class",
-        "documentation": "",
-        "sortText": "0",
-        "filterText": "mailbox",
-        "textEdit": {
-          "range": {
-            "start": {
-              "line": 43,
-              "character": 8
-            },
-            "end": {
-              "line": 43,
-              "character": 8
-            }
-          },
-          "newText": "mailbox"
-        }
-      },
-      {
-        "label": "process",
-        "labelDetails": {
-          "detail": " ",
-          "description": "std"
-        },
-        "kind": "Class",
-        "documentation": "",
-        "sortText": "0",
-        "filterText": "process",
-        "textEdit": {
-          "range": {
-            "start": {
-              "line": 43,
-              "character": 8
-            },
-            "end": {
-              "line": 43,
-              "character": 8
-            }
-          },
-          "newText": "process"
-        }
-      },
-      {
         "label": "reg",
         "kind": "Keyword",
         "sortText": "2",
@@ -277,30 +229,6 @@
             }
           },
           "newText": "reg"
-        }
-      },
-      {
-        "label": "semaphore",
-        "labelDetails": {
-          "detail": " ",
-          "description": "std"
-        },
-        "kind": "Class",
-        "documentation": "",
-        "sortText": "0",
-        "filterText": "semaphore",
-        "textEdit": {
-          "range": {
-            "start": {
-              "line": 43,
-              "character": 8
-            },
-            "end": {
-              "line": 43,
-              "character": 8
-            }
-          },
-          "newText": "semaphore"
         }
       },
       {
@@ -383,30 +311,6 @@
             }
           },
           "newText": "util_pkg"
-        }
-      },
-      {
-        "label": "weak_reference",
-        "labelDetails": {
-          "detail": " ",
-          "description": "std"
-        },
-        "kind": "Class",
-        "documentation": "",
-        "sortText": "0",
-        "filterText": "weak_reference",
-        "textEdit": {
-          "range": {
-            "start": {
-              "line": 43,
-              "character": 8
-            },
-            "end": {
-              "line": 43,
-              "character": 8
-            }
-          },
-          "newText": "weak_reference"
         }
       },
       {
@@ -803,32 +707,6 @@
             }
           },
           "newText": "intf"
-        }
-      },
-      {
-        "label": "randomize",
-        "labelDetails": {
-          "detail": " function",
-          "description": "std"
-        },
-        "kind": "Function",
-        "documentation": "int randomize(...)",
-        "sortText": "0",
-        "filterText": "randomize",
-        "insertText": "randomize()",
-        "insertTextFormat": "Snippet",
-        "textEdit": {
-          "range": {
-            "start": {
-              "line": 64,
-              "character": 25
-            },
-            "end": {
-              "line": 64,
-              "character": 25
-            }
-          },
-          "newText": "randomize()"
         }
       },
       {

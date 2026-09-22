@@ -22,7 +22,7 @@ namespace lsp {
 class LspClient {
 public:
     void showInfo(const std::string& message) {
-        std::cerr << "Info Notif: " << message << '\n';
+        server::logging::info("Info Notif: {}", message);
         onWindowShowMessage(lsp::ShowMessageParams{
             .type = lsp::MessageType::Info,
             .message = message,
@@ -30,7 +30,7 @@ public:
     }
 
     virtual void showWarning(const std::string& message) {
-        std::cerr << "Warning Notif: " << message << '\n';
+        server::logging::warn("Warning Notif: {}", message);
         onWindowShowMessage(lsp::ShowMessageParams{
             .type = lsp::MessageType::Warning,
             .message = message,
@@ -38,7 +38,7 @@ public:
     }
 
     virtual void showError(const std::string& message) {
-        std::cerr << "Error Notif: " << message << '\n';
+        server::logging::error("Error Notif: {}", message);
         onWindowShowMessage(lsp::ShowMessageParams{
             .type = lsp::MessageType::Error,
             .message = message,

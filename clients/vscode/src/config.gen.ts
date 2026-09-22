@@ -38,6 +38,8 @@ export interface Config {
   inlayHints?: Config__InlayHints
   /** Semantic token highlighting settings */
   semanticTokens?: Config__SemanticTokens
+  /** Logging settings, also settable with the --log-level command line flag */
+  logging?: Config__Logging
   /** Builds for direct .f selection or command-based .f generation */
   builds?: Config__Build[]
 }
@@ -78,6 +80,11 @@ export interface Config__InlayHints {
   funcArgNames?: number
   /** Macro argument hints: 0=off, N=only calls with >=N args */
   macroArgNames?: number
+}
+
+export interface Config__Logging {
+  /** How much of the log to keep. A level keeps everything below it, so 'error' only shows failures and 'debug' shows the per-request detail that a client generates while typing. */
+  level?: "off" | "error" | "warn" | "info" | "debug"
 }
 
 export interface Config__SemanticTokens {

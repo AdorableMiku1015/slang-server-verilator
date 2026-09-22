@@ -8,6 +8,7 @@
 #pragma once
 
 #include "SlangServerWcp.h"
+#include "util/Log.h"
 #include "wcp/WcpTypes.h"
 #include <atomic>
 #include <mutex>
@@ -85,7 +86,7 @@ private:
         while (sentLen < len) {
             ssize_t sent = send(m_clientFd, buff + sentLen, len - sentLen, 0);
             if (sent < 0) {
-                std::cerr << "WCP send failed: " << strerror(errno) << std::endl;
+                server::logging::error("WCP send failed: {}", strerror(errno));
                 return;
             }
             else {
@@ -102,7 +103,7 @@ private:
 
         int retval = select(m_clientFd + 1, &clientFdSet, nullptr, nullptr, &tv);
         if (retval < 0) {
-            std::cerr << "WCP select() failure: " << strerror(errno) << std::endl;
+            server::logging::error("WCP select() failure: {}", strerror(errno));
             stop();
         }
         else if (retval > 0) {
@@ -111,11 +112,11 @@ private:
             char buff[buffSize];
             ssize_t size = recv(m_clientFd, buff, buffSize, MSG_DONTWAIT);
             if (size < 0) {
-                std::cerr << "WCP recv() failure: " << strerror(errno) << std::endl;
+                server::logging::error("WCP recv() failure: {}", strerror(errno));
                 stop();
             }
             else if (size == 0) {
-                std::cerr << "WCP server disconnected" << std::endl;
+                server::logging::warn("WCP server disconnected");
                 stop();
             }
             else {

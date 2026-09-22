@@ -26,7 +26,8 @@ Config Config::fromFiles(const std::optional<std::string>& workspaceConf,
     // Layer a single config file onto the merged config object
     auto layerFile = [&](const std::string& confPath) -> std::optional<rfl::Generic::Object> {
         if (!fs::exists(confPath)) {
-            WARN("Config file {} does not exist, skipping", confPath);
+            // Most projects only have some of the three config files, so a missing one is normal
+            DEBUG("Config file {} does not exist, skipping", confPath);
             return std::nullopt;
         }
 

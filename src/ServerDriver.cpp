@@ -128,7 +128,7 @@ void ServerDriver::parseAndLoadSources(const std::vector<std::string>& buildfile
     diagEngine.setMappingsFromPragmas();
 
     // Create documents from syntax trees
-    INFO("Creating ServerDriver with {} trees", driver.syntaxTrees.size());
+    DEBUG("Creating ServerDriver with {} trees", driver.syntaxTrees.size());
     for (auto& tree : driver.syntaxTrees) {
         for (auto buffer : tree->getSourceBufferIds()) {
             auto path = sm.getFullPath(buffer);
@@ -326,7 +326,7 @@ void ServerDriver::onDocDidChange(const lsp::DidChangeTextDocumentParams& params
 
     doc->onChange(params.contentChanges);
     if (ctx.isCancelled()) {
-        ctx.info("Applied changes for {}; skipping superseded analysis", doc->getWsRelativePath());
+        ctx.debug("Applied changes for {}; skipping superseded analysis", doc->getWsRelativePath());
         ctx.throwIfCancelled("before analysis");
     }
     analyzeDocument(*doc, ctx);
@@ -505,7 +505,7 @@ std::vector<std::string> ServerDriver::getModulesInFile(const std::string& path)
     if (moduleNames.empty()) {
         WARN("No modules found in file {}", path);
     }
-    INFO("Found {} modules in file {}", moduleNames.size(), path);
+    DEBUG("Found {} modules in file {}", moduleNames.size(), path);
     return moduleNames;
 }
 
@@ -879,7 +879,9 @@ std::optional<DefinitionInfo> ServerDriver::getDefinitionInfoAt(const URI& uri,
                 symSyntax = typeParam->getTypeAlias().getSyntax();
         }
         if (!symSyntax) {
-            ERROR("Failed to get syntax for symbol {} of kind {}", symbol->name,
+            // Implicit symbols (coverpoints, iteration variables, and the like) have no syntax of
+            // their own, so this is expected rather than an error
+            DEBUG("Failed to get syntax for symbol {} of kind {}", symbol->name,
                   toString(symbol->kind));
             return {};
         }
@@ -893,7 +895,7 @@ std::optional<DefinitionInfo> ServerDriver::getDefinitionInfoAt(const URI& uri,
 
         auto foundNameToken = findNameToken(symSyntax, symbol->name);
         if (!foundNameToken) {
-            ERROR("Failed to find name token for symbol '{}' of kind {} = {}", symbol->name,
+            DEBUG("Failed to find name token for symbol '{}' of kind {} = {}", symbol->name,
                   toString(symbol->kind), symSyntax->toString());
         }
         parsing::Token nameToken = foundNameToken ? *foundNameToken : symSyntax->getFirstToken();
@@ -901,7 +903,7 @@ std::optional<DefinitionInfo> ServerDriver::getDefinitionInfoAt(const URI& uri,
         auto result = DefinitionInfo::SyntaxTarget::fromNode(symSyntax, nameToken, sm);
         if (sm.isMacroLoc(nameToken.location()) &&
             result.macroUsageRange == SourceRange::NoLocation) {
-            ERROR("Couldn't get original range for symbol {}", nameToken.valueText());
+            DEBUG("Couldn't get original range for symbol {}", nameToken.valueText());
         }
         return result;
     };
@@ -1094,7 +1096,7 @@ std::optional<lsp::SemanticTokens> ServerDriver::getDocSemanticTokens(
     const auto& tokens = analysis->getSemanticTokens(ctx);
     auto data = encodeSemanticTokens(doc->getText(), tokens, range ? &*range : nullptr, ctx);
 
-    ctx.info("Providing {} semantic tokens for {}", data.size() / 5, doc->getWsRelativePath());
+    ctx.debug("Providing {} semantic tokens for {}", data.size() / 5, doc->getWsRelativePath());
     return lsp::SemanticTokens{.data = std::move(data)};
 }
 
@@ -1424,7 +1426,7 @@ void ServerDriver::publishInactiveRegions(SlangDoc& doc, const lsp::RequestConte
 
     ctx.throwIfCancelled("before collecting inactive regions");
     auto regions = doc.getInactiveRegions(ctx);
-    ctx.info("Collected {} inactive regions for {}", regions.size(), doc.getWsRelativePath());
+    ctx.debug("Collected {} inactive regions for {}", regions.size(), doc.getWsRelativePath());
     ctx.throwIfCancelled("before publishing inactive regions");
 
     client.onTextDocumentInactiveRegions(lsp::InactiveRegionsParams{

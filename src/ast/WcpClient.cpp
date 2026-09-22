@@ -11,6 +11,7 @@
 #include "fmt/format.h"
 #include "rfl/UnderlyingEnums.hpp"
 #include "rfl/to_generic.hpp"
+#include "util/Logging.h"
 #include "wcp/WcpTypes.h"
 #include <chrono>
 #include <csignal>
@@ -60,7 +61,7 @@ void waves::WcpClient::runViewer() {
 
     if (!CreateProcessA(NULL, const_cast<char*>(cmdLine.c_str()), NULL, NULL, TRUE, 0, NULL, NULL,
                         &si, &pi)) {
-        std::cerr << "Problem launching waveform viewer: " << GetLastError() << std::endl;
+        ERROR("Problem launching waveform viewer: {}", GetLastError());
     }
 
     CloseHandle(pi.hProcess);
@@ -75,10 +76,10 @@ void waves::WcpClient::runViewer() {
         stderrLog /= "slang-server.wcp.stderr";
 
         if (!freopen(stdoutLog.c_str(), "w", stdout)) {
-            std::cerr << "Warning: failed to redirect stdout to " << stdoutLog << std::endl;
+            WARN("Failed to redirect stdout to {}", stdoutLog.string());
         }
         if (!freopen(stderrLog.c_str(), "w", stderr)) {
-            std::cerr << "Warning: failed to redirect stderr to " << stderrLog << std::endl;
+            WARN("Failed to redirect stderr to {}", stderrLog.string());
         }
 
         std::vector<char*> args;
@@ -93,7 +94,7 @@ void waves::WcpClient::runViewer() {
         // TODO -- make this persist even if slang-server goes down, maybe a switch for that
         // behavior?
         execvp(args[0], args.data());
-        std::cerr << "Problem launching waveform viewer: " << strerror(errno) << std::endl;
+        ERROR("Problem launching waveform viewer: {}", strerror(errno));
         exit(0);
     }
 #endif
@@ -102,7 +103,7 @@ void waves::WcpClient::runViewer() {
 void waves::WcpClient::initClient() {
     // Create socket
     if ((m_serverFd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        std::cerr << "Problem creating WCP socket: " << strerror(errno) << std::endl;
+        ERROR("Problem creating WCP socket: {}", strerror(errno));
         stop();
         return;
     }
@@ -112,7 +113,7 @@ void waves::WcpClient::initClient() {
     server_addr.sin_addr.s_addr = INADDR_ANY;
     server_addr.sin_port = 0;
     if (bind(m_serverFd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        std::cerr << "Problem binding to WCP port: " << strerror(errno) << std::endl;
+        ERROR("Problem binding to WCP port: {}", strerror(errno));
         stop();
         return;
     }
@@ -121,7 +122,7 @@ void waves::WcpClient::initClient() {
     struct sockaddr_in assignedAddr;
     socklen_t len = sizeof(assignedAddr);
     if (getsockname(m_serverFd, (struct sockaddr*)&assignedAddr, &len) < 0) {
-        std::cerr << "Problem discovering WCP port number: " << strerror(errno) << std::endl;
+        ERROR("Problem discovering WCP port number: {}", strerror(errno));
         stop();
         return;
     }
@@ -131,7 +132,7 @@ void waves::WcpClient::initClient() {
 void waves::WcpClient::greet() {
     // Listen + accept connection
     if (listen(m_serverFd, 1) < 0) {
-        std::cerr << "Problem listening to WCP port: " << strerror(errno) << std::endl;
+        ERROR("Problem listening to WCP port: {}", strerror(errno));
         stop();
         return;
     }
@@ -139,7 +140,7 @@ void waves::WcpClient::greet() {
     struct sockaddr_in clientAddr;
     socklen_t clientAddrLen = sizeof(clientAddr);
     if ((m_clientFd = accept(m_serverFd, (struct sockaddr*)&clientAddr, &clientAddrLen)) < 0) {
-        std::cerr << "Problem accepting WCP connection: " << strerror(errno) << std::endl;
+        ERROR("Problem accepting WCP connection: {}", strerror(errno));
         stop();
         return;
     }
@@ -149,7 +150,7 @@ void waves::WcpClient::greet() {
     setsockopt(m_clientFd, IPPROTO_TCP, TCP_QUICKACK, (char*)&flag, sizeof(int));
 #endif
 
-    std::cerr << "WCP connection established" << std::endl;
+    INFO("WCP connection established");
 
     // Send greeting
     sendMessage(rfl::to_generic<rfl::UnderlyingEnums>(wcp::Greeting{
@@ -165,7 +166,7 @@ void waves::WcpClient::greet() {
         std::chrono::duration<double> greetingWait = std::chrono::steady_clock::now() -
                                                      greetingStart;
         if (greetingWait.count() > 2.0) {
-            std::cerr << "WCP timed out waiting for server greeting" << std::endl;
+            WARN("WCP timed out waiting for server greeting");
             stop();
             return;
         }
@@ -175,11 +176,11 @@ void waves::WcpClient::greet() {
     // Handle server greeting
     if (greeting) {
         if (greeting->type != "greeting") {
-            std::cerr << "WCP greeting was not a greeting type" << std::endl;
+            ERROR("WCP greeting was not a greeting type");
             stop();
         }
         if (greeting->version != "0") {
-            std::cerr << "WCP greeting was not version 0" << std::endl;
+            ERROR("WCP greeting was not version 0");
             stop();
         }
 
@@ -190,14 +191,13 @@ void waves::WcpClient::greet() {
         for (const auto& requiredCommand : requiredCommands) {
             if (std::find(greeting->commands.begin(), greeting->commands.end(), requiredCommand) ==
                 greeting->commands.end()) {
-                std::cerr << "WCP greeting did not contain " << requiredCommand << " command"
-                          << std::endl;
+                ERROR("WCP greeting did not contain {} command", requiredCommand);
                 stop();
             }
         }
     }
     else {
-        std::cerr << "Problem decoding WCP greeting" << std::endl;
+        ERROR("Problem decoding WCP greeting");
         stop();
     }
 }
@@ -212,10 +212,10 @@ void waves::WcpClient::runClient() {
         }
 
         std::lock_guard<std::mutex> lock(m_lspServer->getServerStateMutex());
-        std::cerr << "WCP S2C MESSAGE: " << *message << std::endl;
+        DEBUG("WCP S2C MESSAGE: {}", *message);
         auto s2cMessage = rfl::json::read<wcp::S2CMessage>(*message);
         if (!s2cMessage) {
-            std::cerr << "WCP S2C decode error" << std::endl;
+            ERROR("WCP S2C decode error");
             continue;
         }
 
@@ -227,7 +227,7 @@ void waves::WcpClient::runClient() {
                 else if constexpr (std::is_same<Type, wcp::Event>()) {
                     auto s2cEvent = rfl::json::read<wcp::S2CEvent>(*message);
                     if (!s2cEvent) {
-                        std::cerr << "WCP S2C event decode error" << std::endl;
+                        ERROR("WCP S2C event decode error");
                         return;
                     }
                     rfl::visit(
@@ -248,8 +248,7 @@ void waves::WcpClient::runClient() {
                                 }
                             }
                             catch (const std::exception& e) {
-                                std::cerr << "WCP S2C Error: " << s2cEvent << " " << e.what()
-                                          << '\n';
+                                ERROR("WCP S2C Error: {} {}", *message, e.what());
                             }
                         },
                         *s2cEvent);

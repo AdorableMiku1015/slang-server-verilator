@@ -131,6 +131,12 @@ public:
         return result;
     }
 
+    /// Every line is prefixed with the wall clock; most assertions only care about what follows
+    std::string strWithoutTimestamps() {
+        static const std::regex timestamp{R"(\[[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}\] )"};
+        return std::regex_replace(str(), timestamp, "");
+    }
+
     LogCapture(const LogCapture&) = delete;
     LogCapture& operator=(const LogCapture&) = delete;
 
@@ -139,7 +145,77 @@ private:
     FILE* original = nullptr;
 };
 
+/// The per-request lifecycle is logged at debug level so that a client asking for completions on
+/// every keystroke does not fill the log with it, so tests that assert on those lines have to ask
+/// for them.
+class LogLevelGuard {
+public:
+    explicit LogLevelGuard(server::logging::Level level) : original(server::logging::getLevel()) {
+        server::logging::setLevel(level);
+    }
+
+    ~LogLevelGuard() { server::logging::setLevel(original); }
+
+    LogLevelGuard(const LogLevelGuard&) = delete;
+    LogLevelGuard& operator=(const LogLevelGuard&) = delete;
+
+private:
+    server::logging::Level original;
+};
+
 } // namespace
+
+TEST_CASE("Log levels gate what is written out") {
+    CHECK(server::logging::parseLevel("debug") == server::logging::Level::debug);
+    CHECK(server::logging::parseLevel("WARN") == server::logging::Level::warn);
+    CHECK(server::logging::parseLevel("Info") == server::logging::Level::info);
+    CHECK(server::logging::parseLevel("off") == server::logging::Level::off);
+    CHECK_FALSE(server::logging::parseLevel("verbose").has_value());
+
+    SECTION("warn keeps warnings and errors") {
+        LogCapture capture;
+        LogLevelGuard guard(server::logging::Level::warn);
+        server::logging::info("hidden {}", 1);
+        server::logging::debug("hidden {}", 2);
+        server::logging::warn("shown {}", 3);
+        server::logging::error("shown {}", 4);
+        CHECK(capture.strWithoutTimestamps() == "WARN: shown 3\nERROR: shown 4\n");
+        CHECK(std::regex_search(capture.str(),
+                                std::regex(R"(\[[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}\] WARN:)")));
+    }
+
+    SECTION("off keeps nothing") {
+        LogCapture capture;
+        LogLevelGuard guard(server::logging::Level::off);
+        server::logging::warn("still hidden");
+        server::logging::error("still hidden");
+        CHECK(capture.str().empty());
+    }
+}
+
+TEST_CASE("Successful requests are silent unless debug logging is on") {
+    TestJsonRpcServer server;
+    LogCapture capture;
+
+    auto result = server.processMessage({
+        .jsonrpc = "2.0",
+        .id = 7,
+        .method = "success",
+        .params = std::nullopt,
+    });
+    CHECK(std::holds_alternative<rfl::Generic>(result));
+    CHECK(capture.str().empty());
+
+    // Failures are what the log is for, so they stay at the default level
+    server.processMessage({
+        .jsonrpc = "2.0",
+        .id = 8,
+        .method = "fail",
+        .params = std::nullopt,
+    });
+    CHECK(capture.str().find("ERROR: -/-> fail Error: failed") != std::string::npos);
+    CHECK(capture.str().find("<--- fail") == std::string::npos);
+}
 
 TEST_CASE("JSON-RPC request IDs support integers and strings") {
     auto numeric = rfl::json::read<lsp::RpcRequest>(
@@ -158,6 +234,7 @@ TEST_CASE("JSON-RPC request IDs support integers and strings") {
 TEST_CASE("JSON-RPC server separates activity batches and exits when input closes") {
     TestJsonRpcServer server;
     LogCapture capture;
+    LogLevelGuard guard(server::logging::Level::debug);
     auto frame = [](std::string_view message) {
         return fmt::format("Content-Length: {}\r\n\r\n{}", message.size(), message);
     };
@@ -186,6 +263,7 @@ TEST_CASE("JSON-RPC server separates activity batches and exits when input close
 TEST_CASE("JSON-RPC messages log their latency") {
     TestJsonRpcServer server;
     LogCapture capture;
+    LogLevelGuard guard(server::logging::Level::debug);
 
     SECTION("successful request") {
         auto result = server.processMessage({
@@ -197,9 +275,9 @@ TEST_CASE("JSON-RPC messages log their latency") {
 
         CHECK(std::holds_alternative<rfl::Generic>(result));
         CHECK(std::regex_match(
-            capture.str(),
+            capture.strWithoutTimestamps(),
             std::regex(
-                R"(\[#7 [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}\] INFO: <--- success\n\[#7 {8}\+\.[0-9]{3}\] INFO: Started success\n\[#7 {8}\+\.[0-9]{3}\] INFO: ---> success\n)")));
+                R"(\[#7 {8}\+\.[0-9]{3}\] DEBUG: <--- success\n\[#7 {8}\+\.[0-9]{3}\] DEBUG: Started success\n\[#7 {8}\+\.[0-9]{3}\] DEBUG: ---> success\n)")));
     }
 
     SECTION("failed request") {
@@ -212,9 +290,9 @@ TEST_CASE("JSON-RPC messages log their latency") {
 
         CHECK(std::holds_alternative<lsp::RpcError>(result));
         CHECK(std::regex_match(
-            capture.str(),
+            capture.strWithoutTimestamps(),
             std::regex(
-                R"(\[#request-id [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}\] INFO: <--- fail\n\[#request-id {8}\+\.[0-9]{3}\] INFO: Started fail\n\[#request-id {8}\+\.[0-9]{3}\] ERROR: -/-> fail Error: failed\n)")));
+                R"(\[#request-id {8}\+\.[0-9]{3}\] DEBUG: <--- fail\n\[#request-id {8}\+\.[0-9]{3}\] DEBUG: Started fail\n\[#request-id {8}\+\.[0-9]{3}\] ERROR: -/-> fail Error: failed\n)")));
     }
 
     SECTION("successful notification") {
@@ -227,9 +305,9 @@ TEST_CASE("JSON-RPC messages log their latency") {
 
         CHECK(std::holds_alternative<std::nullopt_t>(result));
         CHECK(std::regex_match(
-            capture.str(),
+            capture.strWithoutTimestamps(),
             std::regex(
-                R"(\[n([0-9]+) [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}\] INFO: <--- notification\n\[n\1 {8}\+\.[0-9]{3}\] INFO: ---- notification \(notification finished\)\n)")));
+                R"(\[n([0-9]+) {8}\+\.[0-9]{3}\] DEBUG: <--- notification\n\[n\1 {8}\+\.[0-9]{3}\] DEBUG: ---- notification \(notification finished\)\n)")));
     }
 
     SECTION("failed notification") {
@@ -242,9 +320,9 @@ TEST_CASE("JSON-RPC messages log their latency") {
 
         CHECK(std::holds_alternative<std::nullopt_t>(result));
         CHECK(std::regex_match(
-            capture.str(),
+            capture.strWithoutTimestamps(),
             std::regex(
-                R"(\[n([0-9]+) [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}\] INFO: <--- failed-notification\n\[n\1 {8}\+\.[0-9]{3}\] ERROR: -/-> failed-notification Error: notification failed\n)")));
+                R"(\[n([0-9]+) {8}\+\.[0-9]{3}\] DEBUG: <--- failed-notification\n\[n\1 {8}\+\.[0-9]{3}\] ERROR: -/-> failed-notification Error: notification failed\n)")));
     }
 
     SECTION("handler receives request context") {
@@ -257,9 +335,9 @@ TEST_CASE("JSON-RPC messages log their latency") {
 
         CHECK(std::holds_alternative<rfl::Generic>(result));
         CHECK(std::regex_match(
-            capture.str(),
+            capture.strWithoutTimestamps(),
             std::regex(
-                R"(\[#9 [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}\] INFO: <--- context\n\[#9 {8}\+\.[0-9]{3}\] INFO: Started context\n\[#9 {8}\+\.[0-9]{3}\] INFO: request checkpoint\n\[#9 {8}\+\.[0-9]{3}\] INFO: ---> context\n)")));
+                R"(\[#9 {8}\+\.[0-9]{3}\] DEBUG: <--- context\n\[#9 {8}\+\.[0-9]{3}\] DEBUG: Started context\n\[#9 {8}\+\.[0-9]{3}\] INFO: request checkpoint\n\[#9 {8}\+\.[0-9]{3}\] DEBUG: ---> context\n)")));
     }
 
     SECTION("notification handler receives request context") {
@@ -272,9 +350,9 @@ TEST_CASE("JSON-RPC messages log their latency") {
 
         CHECK(std::holds_alternative<std::nullopt_t>(result));
         CHECK(std::regex_match(
-            capture.str(),
+            capture.strWithoutTimestamps(),
             std::regex(
-                R"(\[n([0-9]+) [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}\] INFO: <--- context-notification\n\[n\1 {8}\+\.[0-9]{3}\] INFO: notification checkpoint\n\[n\1 {8}\+\.[0-9]{3}\] INFO: ---- context-notification \(notification finished\)\n)")));
+                R"(\[n([0-9]+) {8}\+\.[0-9]{3}\] DEBUG: <--- context-notification\n\[n\1 {8}\+\.[0-9]{3}\] INFO: notification checkpoint\n\[n\1 {8}\+\.[0-9]{3}\] DEBUG: ---- context-notification \(notification finished\)\n)")));
     }
 
     SECTION("void request handler receives request context") {
@@ -287,9 +365,9 @@ TEST_CASE("JSON-RPC messages log their latency") {
 
         CHECK(std::holds_alternative<rfl::Generic>(result));
         CHECK(std::regex_match(
-            capture.str(),
+            capture.strWithoutTimestamps(),
             std::regex(
-                R"(\[#10 [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}\] INFO: <--- context-void\n\[#10 {8}\+\.[0-9]{3}\] INFO: Started context-void\n\[#10 {8}\+\.[0-9]{3}\] INFO: void request checkpoint\n\[#10 {8}\+\.[0-9]{3}\] INFO: ---> context-void\n)")));
+                R"(\[#10 {8}\+\.[0-9]{3}\] DEBUG: <--- context-void\n\[#10 {8}\+\.[0-9]{3}\] DEBUG: Started context-void\n\[#10 {8}\+\.[0-9]{3}\] INFO: void request checkpoint\n\[#10 {8}\+\.[0-9]{3}\] DEBUG: ---> context-void\n)")));
     }
 
     SECTION("cancel request marks matching context") {
@@ -310,9 +388,9 @@ TEST_CASE("JSON-RPC messages log their latency") {
         CHECK(std::holds_alternative<std::nullopt_t>(cancelResult));
         CHECK(ctx.isCancelled());
         CHECK(std::regex_match(
-            capture.str(),
+            capture.strWithoutTimestamps(),
             std::regex(
-                R"(\[#11 {8}\+\.[0-9]{3}\] INFO: <--- \$/cancelRequest - cancelling context\n)")));
+                R"(\[#11 {8}\+\.[0-9]{3}\] DEBUG: <--- \$/cancelRequest - cancelling context\n)")));
 
         auto result = server.processMessage(request, ctx);
         REQUIRE(std::holds_alternative<lsp::RpcError>(result));
@@ -339,9 +417,9 @@ TEST_CASE("JSON-RPC messages log their latency") {
         });
         CHECK(ctx.isCancelled());
         CHECK(std::regex_match(
-            capture.str(),
+            capture.strWithoutTimestamps(),
             std::regex(
-                R"(\[#14 {8}\+\.[0-9]{3}\] INFO: <--- \$/cancelRequest - cancelling success\n)")));
+                R"(\[#14 {8}\+\.[0-9]{3}\] DEBUG: <--- \$/cancelRequest - cancelling success\n)")));
 
         auto result = server.processMessage(request, ctx);
         REQUIRE(std::holds_alternative<lsp::RpcError>(result));
@@ -368,9 +446,9 @@ TEST_CASE("JSON-RPC messages log their latency") {
         });
         CHECK_FALSE(ctx.isCancelled());
         CHECK(std::regex_match(
-            capture.str(),
+            capture.strWithoutTimestamps(),
             std::regex(
-                R"(\[#15 {8}\+\.[0-9]{3}\] INFO: Started success\n\[#15 {8}\+\.[0-9]{3}\] INFO: <--- \$/cancelRequest - success does not support cancellation\n)")));
+                R"(\[#15 {8}\+\.[0-9]{3}\] DEBUG: Started success\n\[#15 {8}\+\.[0-9]{3}\] DEBUG: <--- \$/cancelRequest - success does not support cancellation\n)")));
         server.untrack(request, ctx);
     }
 
@@ -384,9 +462,9 @@ TEST_CASE("JSON-RPC messages log their latency") {
 
         CHECK(std::holds_alternative<std::nullopt_t>(result));
         CHECK(std::regex_match(
-            capture.str(),
+            capture.strWithoutTimestamps(),
             std::regex(
-                R"(\[#404 {8}\+\.[0-9]{3}\] INFO: <--- \$/cancelRequest - cancel requested but already returned\n)")));
+                R"(\[#404 {8}\+\.[0-9]{3}\] DEBUG: <--- \$/cancelRequest - cancel requested but already returned\n)")));
     }
 
     SECTION("numeric and string request IDs are distinct") {
@@ -456,9 +534,9 @@ TEST_CASE("JSON-RPC messages log their latency") {
         auto result = server.processMessage(first, firstContext);
         CHECK(std::holds_alternative<std::nullopt_t>(result));
         CHECK(std::regex_match(
-            capture.str(),
+            capture.strWithoutTimestamps(),
             std::regex(
-                R"(\[n([0-9]+) [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}\] INFO: <--- textDocument/didChange\n\[n\1 {8}\+\.[0-9]{3}\] INFO: ---- textDocument/didChange \(notification superseded before analysis\)\n)")));
+                R"(\[n([0-9]+) {8}\+\.[0-9]{3}\] DEBUG: <--- textDocument/didChange\n\[n\1 {8}\+\.[0-9]{3}\] DEBUG: ---- textDocument/didChange \(notification superseded before analysis\)\n)")));
 
         server.untrack(first, firstContext);
         server.untrack(second, secondContext);

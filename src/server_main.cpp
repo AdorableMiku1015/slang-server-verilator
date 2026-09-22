@@ -12,6 +12,7 @@
 #endif
 
 #include "SlangServer.h"
+#include "util/Log.h"
 #include <cstdio>
 #include <exception>
 #include <fmt/format.h>
@@ -80,6 +81,12 @@ int main(int argc, char** argv) {
     std::optional<bool> configSchema;
     cmdline.add("--config-schema", configSchema, "Print json schema of config file and exit");
 
+    std::optional<std::string> logLevel;
+    cmdline.add(
+        "--log-level", logLevel,
+        "How much to log to stderr: off, error, warn, info (default), or debug. Per-request "
+        "detail is only logged at debug.");
+
     cmdline.parse(argc, argv);
 
     if (showHelp == true) {
@@ -110,6 +117,18 @@ int main(int argc, char** argv) {
         }
         return 0;
     }
+
+    if (logLevel) {
+        auto level = server::logging::parseLevel(*logLevel);
+        if (!level) {
+            OS::print(fmt::format("Unknown log level '{}', expected one of off, error, warn, info, "
+                                  "or debug\n",
+                                  *logLevel));
+            return 1;
+        }
+        server::logging::fixLevel(*level);
+    }
+
     SlangLspClient client;
     SlangServer server(client);
     server.run();

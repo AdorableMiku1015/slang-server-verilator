@@ -1805,6 +1805,51 @@ TEST_CASE("PortListCompletion") {
     golden.record("modports", modportCompletions);
 }
 
+TEST_CASE("Completions skip the implicit standard package") {
+    ServerHarness server("repo1");
+
+    // Every compilation unit imports `std` implicitly. Its only members are the verification
+    // classes (mailbox, semaphore, process, weak_reference) and randomize, which are never what is
+    // being typed, and in a port list they used to be the only completions on offer.
+    auto doc = server.openFile("standard_package_test.sv", R"(
+    module standard_package_test (
+        input logic clk,
+        output logic 
+    );
+        logic 
+    endmodule
+    )");
+
+    auto isStandardPackageSymbol = [](const lsp::CompletionItem& item) {
+        return item.label == "mailbox" || item.label == "semaphore" || item.label == "process" ||
+               item.label == "weak_reference" || item.label == "randomize";
+    };
+
+    auto portCursor = doc.after("output logic ");
+    auto portLoc = doc.getLocation(portCursor.m_offset);
+    REQUIRE(portLoc);
+    CHECK(CompletionContext::fromLocation(*doc.doc, *portLoc).kind ==
+          CompletionContextKind::PortList);
+    auto portCompletions = portCursor.getResolvedCompletions();
+    CHECK(std::none_of(portCompletions.begin(), portCompletions.end(), isStandardPackageSymbol));
+
+    auto bodyCursor = doc.after("        logic ");
+    auto bodyLoc = doc.getLocation(bodyCursor.m_offset);
+    REQUIRE(bodyLoc);
+    CHECK(CompletionContext::fromLocation(*doc.doc, *bodyLoc).kind ==
+          CompletionContextKind::ModuleMember);
+    auto bodyCompletions = bodyCursor.getResolvedCompletions();
+    CHECK(std::none_of(bodyCompletions.begin(), bodyCompletions.end(), isStandardPackageSymbol));
+
+    // The standard package going away must not take the useful declaration completions with it
+    auto logicKeyword = std::find_if(bodyCompletions.begin(), bodyCompletions.end(),
+                                     [](const lsp::CompletionItem& item) {
+                                         return item.label == "logic" &&
+                                                item.kind == lsp::CompletionItemKind::Keyword;
+                                     });
+    CHECK(logicKeyword != bodyCompletions.end());
+}
+
 TEST_CASE("NonProceduralSignalCompletion") {
     ServerHarness server("repo1");
     JsonGoldenTest golden;

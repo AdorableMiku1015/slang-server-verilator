@@ -10,6 +10,7 @@
 
 #include "JsonTypes.h"
 #include "rfl/Generic.hpp"
+#include "util/Log.h"
 #include <iostream>
 #include <optional>
 #include <rfl/json.hpp> // IWYU pragma: keep
@@ -67,9 +68,7 @@ inline void sendNotification(const std::string& method, const rfl::Generic& para
         .method = method,
         .params = params,
     });
-    std::cerr << "---> " << method;
-    // std::cerr << ": " << rfl::json::write(params) << std::endl;
-    std::cerr << std::endl;
+    server::logging::debug("---> {} (notification)", method);
 }
 
 inline void sendRequest(const std::string& method, const rfl::Generic& params) {
@@ -79,16 +78,14 @@ inline void sendRequest(const std::string& method, const rfl::Generic& params) {
         .method = method,
         .params = params,
     });
-    std::cerr << "---> " << method;
-    // std::cerr << ": " << rfl::json::write(params) << std::endl;
-    std::cerr << std::endl;
+    server::logging::debug("---> {} (request)", method);
 }
 
 template<typename T>
 std::optional<T> readJson(std::string& line, std::string& content) {
     while (std::getline(std::cin, line)) {
         if (!line.starts_with("Content-Length: ")) {
-            std::cerr << "<-/- " << "Invalid Line: " << line << std::endl;
+            server::logging::error("<-/- Invalid Line: {}", line);
             continue;
         }
 
@@ -109,8 +106,8 @@ std::optional<T> readJson(std::string& line, std::string& content) {
             if (response) {
                 continue;
             }
-            std::cerr << "Error parsing JSON: " << content << std::endl;
-            std::cerr << "Rfl Error: " << request.error().what() << std::endl;
+            server::logging::error("Error parsing JSON: {}", content);
+            server::logging::error("Rfl Error: {}", request.error().what());
             sendMessage(
                 RpcErrorResponse{.jsonrpc = "2.0",
                                  .id = 0,

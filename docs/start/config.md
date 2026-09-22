@@ -217,6 +217,36 @@ All configuration options are optional and have sensible defaults. In VSCode, th
 
 ---
 
+### `logging`
+
+:   **Type:** `Logging`
+
+    ```typescript
+    interface Logging {
+      /** How much of the log to keep */
+      level?: "off" | "error" | "warn" | "info" | "debug"  // default: "info"
+    }
+    ```
+
+    Controls how much the server writes to stderr, which clients show in their server output
+    channel (`Output > slang-server` in VSCode, `:LspLog` in Neovim). Each level keeps
+    everything below it:
+
+    - `"off"`: nothing at all.
+    - `"error"`: only failures.
+    - `"warn"`: failures and warnings.
+    - `"info"` (default): adds what the server does on its own — starting up, which workspace
+      and config files were used, indexing, reloading documents, shutting down.
+    - `"debug"`: adds per-request detail, such as every completion, analysis, semantic token
+      and inlay hint request with its timing. This is the level to ask for when reporting a
+      problem, but it grows quickly, since a client asks for many of these while typing.
+
+    The level can also be set with `--log-level <level>` when starting the server, which wins
+    over the config files. In VSCode, pass it through the `slang.args` setting, for example
+    `"slang.args": ["--log-level", "debug"]`.
+
+---
+
 ## Example Configuration
 
 ### Workspace config (`.slang/server.json`)

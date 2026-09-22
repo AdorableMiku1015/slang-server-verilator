@@ -157,7 +157,7 @@ public:
     void getCompletions(std::vector<lsp::CompletionItem>& results, CompletionDispatch& dispatch,
                         const std::shared_ptr<SlangDoc>& doc,
                         const CompletionContext& context) const final {
-        INFO("General completions with context: {}", toString(context.kind));
+        DEBUG("General completions with context: {}", toString(context.kind));
         auto libraryFirst = results.size();
         InstanceCompletionQuery::addCompletions(results, getIndexer(dispatch), context);
         rankCompletions(results, libraryFirst, rank::Library);
@@ -181,16 +181,16 @@ public:
                         const std::shared_ptr<SlangDoc>& doc,
                         const CompletionContext& context) const final {
         if (!receiverToken) {
-            WARN("No expression token found before '.'");
+            DEBUG("No expression token found before '.'");
             return;
         }
 
         auto* symbol = context.analysis->getSymbolAtToken(receiverToken);
         if (!symbol) {
-            WARN("No symbol found for token {}, checking index.", receiverToken->valueText());
+            DEBUG("No symbol found for token {}, checking index.", receiverToken->valueText());
             auto symbolLoc = getIndexer(dispatch).getFirstSymbolLoc(receiverToken->valueText());
             if (!symbolLoc) {
-                WARN("No symbol found in index for {}", receiverToken->valueText());
+                DEBUG("No symbol found in index for {}", receiverToken->valueText());
                 return;
             }
             auto targetDoc = getDriver(dispatch).getDocument(URI::fromFile(*symbolLoc->uri));
@@ -198,7 +198,7 @@ public:
                 return;
             symbol = targetDoc->getAnalysis()->getDefinition(receiverToken->valueText());
             if (!symbol) {
-                WARN("No symbol found in compilation for {}", receiverToken->valueText());
+                DEBUG("No symbol found in compilation for {}", receiverToken->valueText());
                 return;
             }
         }
@@ -218,13 +218,13 @@ public:
 
         auto* targetScope = context.analysis->getScopeFromSym(symbol);
         if (!targetScope) {
-            WARN("No scope found for sym {}: {}", symbol->getHierarchicalPath(),
-                 toString(symbol->kind));
+            DEBUG("No scope found for sym {}: {}", symbol->getHierarchicalPath(),
+                  toString(symbol->kind));
             return;
         }
 
-        INFO("Getting hierarchical completions for symbol {} in scope {}", symbol->name,
-             symbol->getHierarchicalPath());
+        DEBUG("Getting hierarchical completions for symbol {} in scope {}", symbol->name,
+              symbol->getHierarchicalPath());
         std::string_view previousLabel;
         for (auto& member : targetScope->members()) {
             if (member.name.empty() || member.name == previousLabel)
@@ -292,7 +292,7 @@ public:
             return;
         }
         if (!receiverToken) {
-            WARN("No receiver token found before '::'");
+            DEBUG("No receiver token found before '::'");
             return;
         }
 
@@ -301,11 +301,11 @@ public:
             receiver = analysis->getCompilation()->getPackage(receiverToken->valueText());
         auto* targetScope = analysis->getScopeFromSym(receiver);
         if (!targetScope) {
-            WARN("No scoped completion target found for {}", receiverToken->valueText());
+            DEBUG("No scoped completion target found for {}", receiverToken->valueText());
             return;
         }
 
-        INFO("Looking for scoped members in {}", targetScope->asSymbol().getHierarchicalPath());
+        DEBUG("Looking for scoped members in {}", targetScope->asSymbol().getHierarchicalPath());
         addCompletions(results, targetScope, CompletionContextKind::Expression, context.scope,
                        doc->getURI().str(), context, followedByCall,
                        resolvesCompletionEdits(dispatch));
@@ -768,13 +768,21 @@ void MemberCompletionQuery::addCompletions(
             if (auto importData = currentScope->getWildcardImportData()) {
                 for (auto import : importData->wildcardImports) {
                     auto package = import->getPackage();
-                    if (package != nullptr) {
-                        INFO("Adding wildcard imports from package {}", package->name);
-                        auto importFirst = results.size();
-                        addCompletions(results, package, contextKind, originalScope, documentUri,
-                                       context, labelOnly, deferCallableEdit, false, seen);
-                        rankUnrankedCompletions(results, importFirst, rank::Imported);
+                    if (package == nullptr) {
+                        continue;
                     }
+                    // Every compilation unit implicitly imports the standard package, whose only
+                    // members are the verification classes (mailbox, semaphore, process,
+                    // weak_reference) and randomize. They are never what is being typed here, and
+                    // in a declaration position they used to be the only completions on offer.
+                    if (package == &currentScope->getCompilation().getStdPackage()) {
+                        continue;
+                    }
+                    DEBUG("Adding wildcard imports from package {}", package->name);
+                    auto importFirst = results.size();
+                    addCompletions(results, package, contextKind, originalScope, documentUri,
+                                   context, labelOnly, deferCallableEdit, false, seen);
+                    rankUnrankedCompletions(results, importFirst, rank::Imported);
                 }
             }
         }

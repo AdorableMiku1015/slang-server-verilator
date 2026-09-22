@@ -58,6 +58,10 @@ What is offered depends on the cursor: a local declared after it is left out (a 
 declared before it is used in a procedural block), a shadowed symbol appears once as the one that
 would actually resolve, and the values of the enum being assigned to are ranked first.
 
+The standard package is left out. Every compilation unit imports `std` implicitly, so its
+verification classes (`mailbox`, `semaphore`, `process`, `weak_reference`) used to be offered at
+every declaration position, where they were the only items and never what was being typed.
+
 Planned completions:
 
 - Named assignments (structs, functions, ports, params)

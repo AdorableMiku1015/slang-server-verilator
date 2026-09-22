@@ -65,7 +65,7 @@ void ServerCompilationAnalysis::issueDiagnosticsTo(slang::DiagnosticEngine& diag
     // Driver analysis diagnostics (multi-driven, unused, etc)
     // Use stored options with numThreads=1 to avoid persistent thread pool
     auto& driverAnalysis = getAnalysisManager();
-    INFO("Driver analysis found {} diagnostics", driverAnalysis.getDiagnostics().size());
+    DEBUG("Driver analysis found {} diagnostics", driverAnalysis.getDiagnostics().size());
     for (auto& diag : driverAnalysis.getDiagnostics()) {
         diagEngine.issue(diag);
     }

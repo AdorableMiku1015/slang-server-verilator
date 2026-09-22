@@ -112,7 +112,7 @@ std::shared_ptr<ShallowAnalysis> SlangDoc::refreshAnalysis(const lsp::RequestCon
                                                       trees, m_driver.comp.get());
     auto topNames = analysis->getCompilation()->getRoot().topInstances |
                     std::views::transform([](const auto& top) { return top->name; });
-    ctx.info("Analyzed {} with tops: {}", getWsRelativePath(), fmt::join(topNames, ", "));
+    ctx.debug("Analyzed {} with tops: {}", getWsRelativePath(), fmt::join(topNames, ", "));
     m_analysis = analysis;
     return analysis;
 }

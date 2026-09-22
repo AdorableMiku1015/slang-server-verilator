@@ -127,6 +127,22 @@ struct Config {
     rfl::Description<"Semantic token highlighting settings", SemanticTokens> semanticTokens =
         SemanticTokens{};
 
+    struct Logging {
+        /// Mirrors server::logging::Level, but stays out of `util/Log.h` so that the config schema
+        /// generator does not need the logging dependencies.
+        enum class Level { off, error, warn, info, debug };
+
+        rfl::Description<"How much of the log to keep. A level keeps everything below it, so "
+                         "'error' only shows failures and 'debug' shows the per-request detail "
+                         "that a client generates while typing.",
+                         Level>
+            level = Level::info;
+    };
+
+    rfl::Description<"Logging settings, also settable with the --log-level command line flag",
+                     Logging>
+        logging = Logging{};
+
     struct Build {
         rfl::Description<"Optional name used for generated build files and UI labels",
                          std::optional<std::string>>
@@ -175,6 +191,26 @@ struct rfl::config::enum_descriptions<Config::HoverConfig::DocCommentFormat> {
             case Config::HoverConfig::DocCommentFormat::raw:
                 return "Show the comment text verbatim, including comment markers, in a code "
                        "block.";
+        }
+        return "";
+    }
+};
+
+template<>
+struct rfl::config::enum_descriptions<Config::Logging::Level> {
+    static constexpr bool has_descriptions = true;
+    static constexpr std::string_view get(Config::Logging::Level value) {
+        switch (value) {
+            case Config::Logging::Level::off:
+                return "Log nothing.";
+            case Config::Logging::Level::error:
+                return "Log only failures.";
+            case Config::Logging::Level::warn:
+                return "Log failures and warnings.";
+            case Config::Logging::Level::info:
+                return "Add what the server is doing: startup, indexing, reloads. The default.";
+            case Config::Logging::Level::debug:
+                return "Add per-request detail, such as every completion and analysis.";
         }
         return "";
     }

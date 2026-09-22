@@ -421,13 +421,13 @@ void CompletionDispatch::getCompletions(std::vector<lsp::CompletionItem>& result
     for (auto& item : results)
         context.query->setCompletionEdit(item);
 
-    INFO("Returning {} completions for {} query in {} context", results.size(),
-         toString(context.query->kind()), toString(context.kind));
+    DEBUG("Returning {} completions for {} query in {} context", results.size(),
+          toString(context.query->kind()), toString(context.kind));
 }
 
 void CompletionDispatch::getCompletionItemResolve(lsp::CompletionItem& item,
                                                   const lsp::RequestContext& ctx) {
-    INFO("Resolving completion item: {}", item.label);
+    DEBUG("Resolving completion item: {}", item.label);
     ctx.throwIfCancelled("before resolving completion item");
     if (!item.label.empty() && item.label[0] == '$')
         return;

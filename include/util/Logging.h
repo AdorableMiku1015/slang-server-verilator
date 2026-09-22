@@ -15,6 +15,9 @@
 
 #include "slang/text/SourceLocation.h"
 
+/// Per-request detail, hidden unless the log level is `debug`
+#define DEBUG(format_string, ...) server::logging::debug(format_string __VA_OPT__(, ) __VA_ARGS__);
+
 #define INFO(format_string, ...) server::logging::info(format_string __VA_OPT__(, ) __VA_ARGS__);
 
 #define WARN(format_string, ...) server::logging::warn(format_string __VA_OPT__(, ) __VA_ARGS__);
@@ -29,7 +32,7 @@
 class ScopedTimer {
 public:
     explicit ScopedTimer(std::string name) : m_name(std::move(name)) {
-        INFO("{}...", m_name);
+        DEBUG("{}...", m_name);
         m_start = std::chrono::high_resolution_clock::now();
     }
 
@@ -37,7 +40,7 @@ public:
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - m_start);
         double seconds = static_cast<double>(duration.count()) / 1000000.0;
-        INFO("{} took {:.3f}s", m_name, seconds);
+        DEBUG("{} took {:.3f}s", m_name, seconds);
     }
 
     ScopedTimer(const ScopedTimer&) = delete;

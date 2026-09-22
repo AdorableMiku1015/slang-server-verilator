@@ -343,7 +343,7 @@ std::optional<std::vector<hier::HierItem_t>> tryGetScopeChildren(
         std::vector<hier::HierItem_t> result;
         auto& root = compilation.getRoot();
         for (auto& inst : root.topInstances) {
-            INFO("Adding top instance {}", inst->name);
+            DEBUG("Adding top instance {}", inst->name);
             hier::handleInstance(result, *inst, sourceManager, true);
         }
         for (auto& pkg : compilation.getPackages()) {

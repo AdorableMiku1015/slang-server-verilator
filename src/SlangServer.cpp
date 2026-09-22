@@ -47,6 +47,27 @@
 
 namespace fs = std::filesystem;
 
+namespace {
+
+/// The config carries its own level enum so that it does not have to pull in the logging headers
+server::logging::Level toLogLevel(Config::Logging::Level level) {
+    switch (level) {
+        case Config::Logging::Level::off:
+            return server::logging::Level::off;
+        case Config::Logging::Level::error:
+            return server::logging::Level::error;
+        case Config::Logging::Level::warn:
+            return server::logging::Level::warn;
+        case Config::Logging::Level::info:
+            return server::logging::Level::info;
+        case Config::Logging::Level::debug:
+            return server::logging::Level::debug;
+    }
+    return server::logging::Level::info;
+}
+
+} // namespace
+
 namespace server {
 
 SlangServer::SlangServer(SlangLspClient& client) : m_client(client), m_config(Config()) {
@@ -311,7 +332,7 @@ lsp::InitializeResult SlangServer::getInitialize(const lsp::InitializeParams& pa
                                                    VersionInfo::getHash())},
     };
 
-    INFO("Initialize result: {} ", rfl::json::write(result));
+    DEBUG("Initialize result: {} ", rfl::json::write(result));
 
     return result;
 }
@@ -484,7 +505,7 @@ std::vector<hier::ScopeStep> SlangServer::getScopes(const std::string& hierPath,
         return {};
     }
     auto scopes = m_driver->comp->getScopes(hierPath, ctx);
-    ctx.info("Resolved {} hierarchy scopes for {}", scopes.size(), hierPath);
+    ctx.debug("Resolved {} hierarchy scopes for {}", scopes.size(), hierPath);
     return scopes;
 }
 
@@ -744,6 +765,14 @@ void SlangServer::loadConfig(const Config& config, bool forceIndexing) {
     auto old_config = m_config;
     m_config = Config(config);
 
+    // The command line has the final say on the log level, since it is the one that has to be
+    // reachable when the config files themselves are what is being debugged
+    auto logLevel = toLogLevel(m_config.logging.value().level.value());
+    if (!server::logging::isLevelFixed() && server::logging::getLevel() != logLevel) {
+        server::logging::setLevel(logLevel);
+        INFO("Log level set to {}", server::logging::toString(logLevel));
+    }
+
     if (m_config.build.value().has_value()) {
         m_client.showInfo("Using build file: " + *m_config.build.value());
         setBuildFile(*m_config.build.value());
@@ -967,7 +996,7 @@ void SlangServer::onDocDidSave(const lsp::DidSaveTextDocumentParams& params) {
 
         if (!doc->textMatches(text)) {
             // Recover by overwriting the buffer with the saved text
-            INFO("Document text does not match on save, overwriting");
+            WARN("Document text does not match on save, overwriting");
             m_driver->openDocument(params.textDocument.uri, text);
             doc = m_driver->getDocument(params.textDocument.uri);
         }
@@ -1067,8 +1096,8 @@ rfl::Variant<std::vector<lsp::CompletionItem>, lsp::CompletionList, std::monosta
                                             .triggerKind = lsp::CompletionTriggerKind::Invoked,
                                         }));
 
-    INFO("Completion: kind={} trigger='{}' query={}", toString(ctx.lspContext.triggerKind),
-         ctx.lspContext.triggerCharacter.value_or(""), toString(ctx.query->kind()));
+    DEBUG("Completion: kind={} trigger='{}' query={}", toString(ctx.lspContext.triggerKind),
+          ctx.lspContext.triggerCharacter.value_or(""), toString(ctx.query->kind()));
 
     m_driver->completions.getCompletions(results, doc, ctx);
 
@@ -1104,7 +1133,7 @@ std::optional<std::vector<lsp::InlayHint>> SlangServer::getDocInlayHint(
         return {};
     }
     auto hints = doc->getAnalysis()->getInlayHints(params.range, m_config.inlayHints.get());
-    INFO("Providing {} inlay hints for {}", hints.size(), doc->getWsRelativePath());
+    DEBUG("Providing {} inlay hints for {}", hints.size(), doc->getWsRelativePath());
     return hints;
 }
 
@@ -1213,8 +1242,8 @@ std::optional<std::vector<lsp::Location>> SlangServer::getDocReferences(
     auto references = m_driver->getDocReferences(params.textDocument.uri, params.position,
                                                  params.context.includeDeclaration, ctx);
     auto doc = m_driver->getDocument(params.textDocument.uri);
-    ctx.info("Found {} references for {}", references ? references->size() : 0,
-             doc ? doc->getWsRelativePath() : params.textDocument.uri.getPath());
+    ctx.debug("Found {} references for {}", references ? references->size() : 0,
+              doc ? doc->getWsRelativePath() : params.textDocument.uri.getPath());
     return references;
 }
 

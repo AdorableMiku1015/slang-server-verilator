@@ -12,8 +12,6 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
-#include <ctime>
-#include <fmt/chrono.h>
 #include <fmt/format.h>
 #include <memory>
 #include <optional>
@@ -39,8 +37,7 @@ public:
                    bool supportsCancellation = true) :
         m_id(s_nextId.fetch_add(1, std::memory_order_relaxed)), m_method(method),
         m_rpcId(std::move(rpcId)), m_logId(makeLogId(m_id, m_rpcId)),
-        m_timestamp(std::chrono::system_clock::now()), m_start(std::chrono::steady_clock::now()),
-        m_supportsCancellation(supportsCancellation),
+        m_start(std::chrono::steady_clock::now()), m_supportsCancellation(supportsCancellation),
         m_state((m_rpcId || supportsCancellation) ? std::make_shared<State>() : nullptr) {}
 
     explicit operator bool() const { return m_id != 0; }
@@ -80,39 +77,27 @@ public:
         return fmt::format("[{} {:+12.3f}]", m_logId, elapsed / 1000.0);
     }
 
-    std::string timestamp() const {
-        const auto seconds = std::chrono::floor<std::chrono::seconds>(m_timestamp);
-        const auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
-            m_timestamp - seconds);
-        const auto time = std::chrono::system_clock::to_time_t(seconds);
-        std::tm localTime{};
-#ifdef _WIN32
-        localtime_s(&localTime, &time);
-#else
-        localtime_r(&time, &localTime);
-#endif
-        return fmt::format("{:%H:%M:%S}.{:03}", localTime, milliseconds.count());
-    }
-
+    /// Per-request detail: hidden unless the log level is `debug`, since a client asks for one of
+    /// these for every keystroke and they drown out anything worth reading.
     template<typename... Args>
-    void startInfo(fmt::format_string<Args...> format, Args&&... args) const {
-        if (*this) {
-            server::logging::infoWithContext(fmt::format("[{} {}]", m_logId, timestamp()), format,
-                                             std::forward<Args>(args)...);
-        }
-        else {
-            server::logging::info(format, std::forward<Args>(args)...);
-        }
+    void debug(fmt::format_string<Args...> format, Args&&... args) const {
+        if (!server::logging::isEnabled(server::logging::Level::debug))
+            return;
+        if (*this)
+            server::logging::debugWithContext(elapsedContext(), format,
+                                              std::forward<Args>(args)...);
+        else
+            server::logging::debug(format, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
     void info(fmt::format_string<Args...> format, Args&&... args) const {
-        if (*this) {
-            server::logging::infoWithContext(elapsedContext(), format, std::forward<Args>(args)...);
-        }
-        else {
+        if (!*this) {
             server::logging::info(format, std::forward<Args>(args)...);
+            return;
         }
+        if (server::logging::isEnabled(server::logging::Level::info))
+            server::logging::infoWithContext(elapsedContext(), format, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
@@ -155,7 +140,6 @@ private:
     std::string m_method;
     std::optional<ID_t> m_rpcId;
     std::string m_logId;
-    std::chrono::system_clock::time_point m_timestamp;
     std::chrono::steady_clock::time_point m_start;
     bool m_supportsCancellation = false;
     std::shared_ptr<State> m_state;

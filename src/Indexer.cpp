@@ -445,7 +445,7 @@ void Indexer::collectFilesFromDirectory(const fs::path& dir,
     if (ec) {
         ERROR("Error while indexing directory {}: {}", dir.string(), ec.message());
     }
-    INFO("Found {} files", outFiles.size() - startSize);
+    DEBUG("Found {} files", outFiles.size() - startSize);
 }
 
 void Indexer::startIndexing(const std::vector<Config::IndexConfig>& indexConfigs,

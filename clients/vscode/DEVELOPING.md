@@ -13,7 +13,7 @@ pnpm install
 
 ### Debugging
 
-- The server logs to the `slang-server` output channel. These are triggered with the `INFO`, `WARN` and `ERROR` macros.
+- The server logs to the `slang-server` output channel. These are triggered with the `DEBUG`, `INFO`, `WARN` and `ERROR` macros. Per-request lines (the `<---`/`--->` pairs and the detail inside a handler) are `DEBUG`, so they need `--log-level debug` — either in `slang.args` or in the `logging.level` config field — before they show up.
 - The client logs to the `Slang` output channel using logger classes.
 - `console.log()` logs to the debug console of the slang-server/ vscode window.
 - `vscode.window.showInformationMessage()` is useful for showing popups for debugging. On the server side these can also be triggered with `LspClient::showInfo()`.

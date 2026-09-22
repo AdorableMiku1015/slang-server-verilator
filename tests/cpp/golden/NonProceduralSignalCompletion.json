@@ -130,32 +130,6 @@
           },
           "newText": "my_wire"
         }
-      },
-      {
-        "label": "randomize",
-        "labelDetails": {
-          "detail": " function",
-          "description": "std"
-        },
-        "kind": "Function",
-        "documentation": "int randomize(...)",
-        "sortText": "0",
-        "filterText": "randomize",
-        "insertText": "randomize()",
-        "insertTextFormat": "Snippet",
-        "textEdit": {
-          "range": {
-            "start": {
-              "line": 10,
-              "character": 0
-            },
-            "end": {
-              "line": 10,
-              "character": 0
-            }
-          },
-          "newText": "randomize()"
-        }
       }
     ]
   }

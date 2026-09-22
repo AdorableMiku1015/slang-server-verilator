@@ -787,7 +787,7 @@ slang::SmallVector<const ast::Symbol*, 2> ShallowAnalysis::getSymbolsAtToken(
     }
 
     if (scopes.empty()) {
-        INFO("No scope found for syntax {}, using root scope", syntax->toString());
+        DEBUG("No scope found for syntax {}, using root scope", syntax->toString());
         scopes.push_back(&m_compilation->getRoot().as<ast::Scope>());
     }
 
@@ -849,8 +849,8 @@ slang::SmallVector<const ast::Symbol*, 2> ShallowAnalysis::getSymbolsAtToken(
 
                         const ast::Scope* scope = getScopeFromSym(cur);
                         if (!scope) {
-                            INFO("No scope found for sym {} : {}", cur->getHierarchicalPath(),
-                                 toString(cur->kind));
+                            DEBUG("No scope found for sym {} : {}", cur->getHierarchicalPath(),
+                                  toString(cur->kind));
                             return nullptr;
                         }
                         cur = scope->find(member->name);

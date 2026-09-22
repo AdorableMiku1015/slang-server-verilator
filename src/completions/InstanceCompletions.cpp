@@ -362,8 +362,8 @@ public:
             addParameters(results, context, documentUri);
         else
             addPorts(results, context, documentUri);
-        INFO("Returning {} {} completions for {}", results.size() - first,
-             parameters ? "parameter" : "port", instance.body.getDefinition().name);
+        DEBUG("Returning {} {} completions for {}", results.size() - first,
+              parameters ? "parameter" : "port", instance.body.getDefinition().name);
         rankCompletions(results, first, rank::Scope);
 
         // The connection list is also a place for expressions, so keep the general completions
