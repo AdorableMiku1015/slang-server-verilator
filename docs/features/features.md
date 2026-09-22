@@ -43,6 +43,14 @@ Completions are currently provided for the following constructs:
 
 ![goto-refs](/assets/images/completions.gif)
 
+Items are ranked in layers so that the list starts with what the cursor can refer to: symbols
+visible from the cursor (locals, ports, parameters, instances, types), then members of imported
+packages, then keywords and snippets, and only then the modules, interfaces, and classes found
+anywhere in the workspace. Clients sort by `sortText` before anything else and keep their own fuzzy
+ordering within a layer. Item kinds follow the symbol, grouped the same way as the
+[semantic token types](semantic-tokens.md), so a data port is not shown as an interface and a
+parameter is not shown as a type.
+
 Planned completions:
 
 - Named assignments (structs, functions, ports, params)
