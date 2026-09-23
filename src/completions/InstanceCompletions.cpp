@@ -346,10 +346,11 @@ public:
                                     const ast::InstanceSymbol& instance,
                                     const syntax::ParameterValueAssignmentSyntax* parameterList,
                                     bool parameters, const syntax::SyntaxNode* current,
-                                    bool leadingDot, std::unique_ptr<CompletionQuery> fallback) :
+                                    bool leadingDot, bool afterSeparator,
+                                    std::unique_ptr<CompletionQuery> fallback) :
         InstancePortCompletionQuery(std::move(replacementRange)), instance(instance),
         parameterList(parameterList), parameters(parameters), current(current),
-        leadingDot(leadingDot), fallback(std::move(fallback)) {}
+        leadingDot(leadingDot), afterSeparator(afterSeparator), fallback(std::move(fallback)) {}
 
     CompletionQueryKind kind() const final { return CompletionQueryKind::InstancePorts; }
 
@@ -366,12 +367,48 @@ public:
               parameters ? "parameter" : "port", instance.body.getDefinition().name);
         rankCompletions(results, first, rank::Scope);
 
-        // The connection list is also a place for expressions, so keep the general completions
-        if (fallback)
+        if (generalCompletionsFit()) {
+            auto fallbackFirst = results.size();
             fallback->getCompletions(results, dispatch, doc, context);
+
+            // The port items are the ones that fit the position, so a symbol that is also a port
+            // of this instance does not need to appear twice
+            std::unordered_set<std::string> seen;
+            for (auto it = results.begin(); it != results.begin() + fallbackFirst; ++it)
+                seen.insert(it->label);
+            results.erase(std::remove_if(results.begin() + fallbackFirst, results.end(),
+                                         [&](const lsp::CompletionItem& item) {
+                                             return !seen.insert(item.label).second;
+                                         }),
+                          results.end());
+        }
     }
 
 private:
+    /// Whether the general completions fit where the cursor is: a named list only takes
+    /// `.name(...)` connections, and anything that follows a connection needs a separator first. A
+    /// `.` that was just typed is a position of its own, where the implicit `.name` form of a port
+    /// is valid.
+    bool generalCompletionsFit() const {
+        if (!fallback)
+            return false;
+        if (!leadingDot)
+            return !parameters;
+        return listIsEmpty() || afterSeparator;
+    }
+
+    /// Whether the list has nothing in it yet, which is the only place a positional connection or
+    /// assignment can still be added
+    bool listIsEmpty() const {
+        if (parameters) {
+            return !parameterList || parameterList->parameters.empty();
+        }
+        if (auto* syntax = instance.getSyntax();
+            syntax && syntax->kind == syntax::SyntaxKind::HierarchicalInstance) {
+            return syntax->as<syntax::HierarchicalInstanceSyntax>().connections.empty();
+        }
+        return true;
+    }
     /// The name of the connection or assignment the cursor is in, which is still being typed and
     /// must stay in the list even though the analysis already sees it as connected
     std::string_view currentName() const {
@@ -479,6 +516,9 @@ private:
         auto snippet = getConnectionSnippet(name, hasExpression);
         if (!leadingDot)
             snippet.erase(0, 1);
+        // Without a separator of its own, the connection before this one would run into it
+        if (leadingDot && !afterSeparator)
+            snippet.insert(0, ", ");
 
         // Built like any other symbol item so that resolving it fills in the documentation
         auto item = MemberCompletionQuery::getSymbolCompletion(symbol, context.scope, documentUri);
@@ -497,6 +537,7 @@ private:
     bool parameters;
     const syntax::SyntaxNode* current;
     bool leadingDot;
+    bool afterSeparator;
     std::unique_ptr<CompletionQuery> fallback;
 };
 
@@ -505,10 +546,12 @@ private:
 std::unique_ptr<CompletionQuery> InstancePortCompletionQuery::create(
     lsp::Range replacementRange, const ast::InstanceSymbol& instance,
     const syntax::ParameterValueAssignmentSyntax* parameterList, bool parameters,
-    const syntax::SyntaxNode* current, bool leadingDot, std::unique_ptr<CompletionQuery> fallback) {
+    const syntax::SyntaxNode* current, bool leadingDot, bool afterSeparator,
+    std::unique_ptr<CompletionQuery> fallback) {
     return std::make_unique<InstancePortCompletionQueryImpl>(std::move(replacementRange), instance,
                                                              parameterList, parameters, current,
-                                                             leadingDot, std::move(fallback));
+                                                             leadingDot, afterSeparator,
+                                                             std::move(fallback));
 }
 
 } // namespace server::completions

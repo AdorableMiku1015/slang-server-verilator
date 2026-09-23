@@ -40,7 +40,7 @@ struct CompletionContext;
 class SlangDoc;
 class ShallowAnalysis;
 
-#define CCK(x) x(PortList) x(Expression) x(ModuleMember) x(Procedural) x(Unknown)
+#define CCK(x) x(PortList) x(Expression) x(ModuleMember) x(Procedural) x(Declaration) x(Unknown)
 SLANG_ENUM(CompletionContextKind, CCK)
 #undef CCK
 

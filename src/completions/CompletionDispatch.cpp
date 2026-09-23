@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <string>
 
+#include "slang/parsing/LexerFacts.h"
 #include "slang/parsing/Token.h"
 #include "slang/parsing/TokenKind.h"
 #include "slang/syntax/AllSyntax.h"
@@ -67,6 +68,16 @@ CompletionSite getCompletionSite(const SlangDoc& doc, const ShallowAnalysis& ana
     if (targetToken &&
         (cursor < targetToken->range().start() || targetToken->range().end() < cursor)) {
         targetToken = nullptr;
+    }
+
+    // A keyword the user just typed is not a word token, but completing over it is what keeps a
+    // longer name from being joined onto it (`logic` + `logic_foo` is not `logiclogic_foo`)
+    if (!targetToken) {
+        auto* keyword = analysis.syntaxes.getTokenBefore(cursor);
+        if (keyword && keyword->range().end() == cursor &&
+            parsing::LexerFacts::isKeyword(keyword->kind)) {
+            targetToken = keyword;
+        }
     }
 
     // Replace the whole token so completion in its middle also removes the existing suffix.
@@ -161,43 +172,59 @@ struct InstanceListSite {
 };
 
 /// Walks the tokens around the cursor when the syntax tree has nothing to offer, which is what
-/// happens for a `.` that has nothing after it yet: the parser cannot attach it to the instance.
+/// happens for a `.` that has nothing after it yet, and for a `#(` that is still empty: the parser
+/// cannot attach either to the instance.
 std::optional<InstanceListSite> findInstanceListByTokens(const ShallowAnalysis& analysis,
                                                          slang::SourceLocation cursor) {
-    auto* dot = analysis.syntaxes.getTokenBefore(cursor);
-    if (!dot || dot->kind != parsing::TokenKind::Dot)
+    auto* before = analysis.syntaxes.getTokenBefore(cursor);
+    if (!before)
         return std::nullopt;
 
-    // Walk back over the connections to the `(` that opens the list
-    auto loc = dot->location();
     const parsing::Token* instanceName = nullptr;
     bool parameters = false;
-    int depth = 0;
-    for (int i = 0; i < 500; i++) {
-        auto* token = analysis.syntaxes.getTokenBefore(loc);
-        if (!token)
+    slang::SourceLocation loc;
+
+    if (before->kind == parsing::TokenKind::Dot) {
+        // Walk back over the connections to the `(` that opens the list
+        loc = before->location();
+        int depth = 0;
+        for (int i = 0; i < 500; i++) {
+            auto* token = analysis.syntaxes.getTokenBefore(loc);
+            if (!token)
+                return std::nullopt;
+            loc = token->location();
+
+            if (token->kind == parsing::TokenKind::CloseParenthesis) {
+                depth++;
+                continue;
+            }
+            if (token->kind != parsing::TokenKind::OpenParenthesis)
+                continue;
+            if (depth > 0) {
+                depth--;
+                continue;
+            }
+
+            // `u_inst (` opens the port list and `#(` opens the parameter list
+            auto* listStart = analysis.syntaxes.getTokenBefore(token->location());
+            if (listStart && listStart->kind == parsing::TokenKind::Hash)
+                parameters = true;
+            else
+                instanceName = listStart;
+            loc = token->range().end();
+            break;
+        }
+    }
+    else if (before->kind == parsing::TokenKind::OpenParenthesis) {
+        // An empty `#(...)` has no assignments for the syntax tree to hold on to
+        auto* hash = analysis.syntaxes.getTokenBefore(before->location());
+        if (!hash || hash->kind != parsing::TokenKind::Hash)
             return std::nullopt;
-        loc = token->location();
-
-        if (token->kind == parsing::TokenKind::CloseParenthesis) {
-            depth++;
-            continue;
-        }
-        if (token->kind != parsing::TokenKind::OpenParenthesis)
-            continue;
-        if (depth > 0) {
-            depth--;
-            continue;
-        }
-
-        // `u_inst (` opens the port list and `#(` opens the parameter list
-        auto* before = analysis.syntaxes.getTokenBefore(token->location());
-        if (before && before->kind == parsing::TokenKind::Hash)
-            parameters = true;
-        else
-            instanceName = before;
-        loc = token->range().end();
-        break;
+        parameters = true;
+        loc = before->range().end();
+    }
+    else {
+        return std::nullopt;
     }
 
     // The instance name comes after the parameter list, and before the port list
@@ -221,7 +248,7 @@ std::optional<InstanceListSite> findInstanceListByTokens(const ShallowAnalysis& 
     auto* instance = symbol ? symbol->as_if<ast::InstanceSymbol>() : nullptr;
     if (!instance)
         return std::nullopt;
-    return InstanceListSite{instance, nullptr, false, nullptr};
+    return InstanceListSite{instance, nullptr, parameters, nullptr};
 }
 
 std::optional<InstanceListSite> findInstanceListSite(const ShallowAnalysis& analysis,
@@ -233,6 +260,8 @@ std::optional<InstanceListSite> findInstanceListSite(const ShallowAnalysis& anal
             // An expression inside a connection, or an ordered connection, is not a port name
             case syntax::SyntaxKind::OrderedPortConnection:
             case syntax::SyntaxKind::WildcardPortConnection:
+            // Ordered parameter assignments are expressions for the same reason
+            case syntax::SyntaxKind::OrderedParamAssignment:
                 return std::nullopt;
             case syntax::SyntaxKind::NamedPortConnection: {
                 auto& connection = node->as<syntax::NamedPortConnectionSyntax>();
@@ -267,6 +296,16 @@ std::optional<InstanceListSite> findInstanceListSite(const ShallowAnalysis& anal
                 auto& instanceSyntax = node->as<syntax::HierarchicalInstanceSyntax>();
                 if (!instanceSyntax.decl)
                     return std::nullopt;
+                // Only inside the connection list: on the module or instance name these are not
+                // ports, and there is nothing to insert a connection into yet
+                if (!instanceSyntax.openParen ||
+                    cursor.offset() <= instanceSyntax.openParen.location().offset()) {
+                    return std::nullopt;
+                }
+                if (instanceSyntax.closeParen &&
+                    cursor.offset() > instanceSyntax.closeParen.location().offset()) {
+                    return std::nullopt;
+                }
                 auto* symbol = analysis.getSymbolAtToken(&instanceSyntax.decl->name);
                 auto* instance = symbol ? symbol->as_if<ast::InstanceSymbol>() : nullptr;
                 if (!instance)
@@ -322,9 +361,15 @@ std::unique_ptr<CompletionQuery> CompletionQuery::fromLocation(
     // checked before the `.` case below, which would look for a member of whatever precedes it.
     if (auto listSite = findInstanceListSite(*analysis, cursor); listSite && listSite->instance) {
         auto leadingDot = !(site.tokenBefore && site.tokenBefore->kind == TokenKind::Dot);
+        // A connection the user already wrote leaves the list named, so the next one still needs
+        // its separator; the list itself and a comma are separators of their own, and a `.` that
+        // was just typed is one too
+        auto afterSeparator = site.tokenBefore &&
+                              (site.tokenBefore->kind == TokenKind::OpenParenthesis ||
+                               site.tokenBefore->kind == TokenKind::Comma);
         return completions::InstancePortCompletionQuery::create(
             std::move(site.replacementRange), *listSite->instance, listSite->parameterList,
-            listSite->parameters, listSite->current, leadingDot,
+            listSite->parameters, listSite->current, leadingDot, afterSeparator,
             completions::MemberCompletionQuery::createLexical(site.replacementRange, false, false));
     }
 

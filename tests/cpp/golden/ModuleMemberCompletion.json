@@ -55,7 +55,7 @@
         "kind": "Snippet",
         "sortText": "2",
         "filterText": "always_ff",
-        "insertText": "always_ff @($0) begin\n    \nend",
+        "insertText": "always_ff @(${1:posedge clk}) begin\n    $0\nend",
         "insertTextFormat": "Snippet",
         "textEdit": {
           "range": {
@@ -68,7 +68,7 @@
               "character": 8
             }
           },
-          "newText": "always_ff @($0) begin\n\t\nend"
+          "newText": "always_ff @(${1:posedge clk}) begin\n\t$0\nend"
         }
       },
       {

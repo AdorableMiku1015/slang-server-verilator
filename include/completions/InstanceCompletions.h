@@ -38,11 +38,13 @@ public:
     /// @param parameterList set to complete the `#(...)` list instead of the ports
     /// @param current the connection or assignment being typed, which is still offered
     /// @param leadingDot insert a `.` because the source does not have one yet
+    /// @param afterSeparator the list or a comma is right before the cursor, so an insertion does
+    ///        not need a separator of its own
     /// @param fallback general completions to append after the ports
     static std::unique_ptr<CompletionQuery> create(
         lsp::Range replacementRange, const slang::ast::InstanceSymbol& instance,
         const slang::syntax::ParameterValueAssignmentSyntax* parameterList, bool parameters,
-        const slang::syntax::SyntaxNode* current, bool leadingDot,
+        const slang::syntax::SyntaxNode* current, bool leadingDot, bool afterSeparator,
         std::unique_ptr<CompletionQuery> fallback);
 
 protected:

@@ -87,6 +87,46 @@ bool isModuleMemberContext(SyntaxKind kind) {
     }
 }
 
+/// Check if a syntax kind is part of a declaration, where the cursor is inside something that was
+/// already written rather than at the start of a new item
+bool isDeclarationContext(SyntaxKind kind) {
+    switch (kind) {
+        case SyntaxKind::ParameterDeclaration:
+        case SyntaxKind::TypeParameterDeclaration:
+        case SyntaxKind::ParameterPortList:
+        case SyntaxKind::ParameterValueAssignment:
+            return true;
+        default:
+            return false;
+    }
+}
+
+/// Check if a syntax kind declares a type and a name, where the cursor is inside the declaration
+/// rather than at the start of a new item
+bool isDeclaringMember(SyntaxKind kind) {
+    switch (kind) {
+        case SyntaxKind::DataDeclaration:
+        case SyntaxKind::NetDeclaration:
+        case SyntaxKind::TypedefDeclaration:
+        case SyntaxKind::PortDeclaration:
+        case SyntaxKind::LocalVariableDeclaration:
+        case SyntaxKind::SpecparamDeclaration:
+            return true;
+        default:
+            return false;
+    }
+}
+
+/// The module name of an instantiation is completed with module names even though the cursor is
+/// inside an item that was already written
+bool isInstantiationType(const SyntaxNode& node, SourceLocation loc) {
+    if (node.kind != SyntaxKind::HierarchyInstantiation)
+        return false;
+
+    auto range = node.as<HierarchyInstantiationSyntax>().type.range();
+    return loc >= range.start() && loc <= range.end();
+}
+
 /// Check if a syntax kind represents a procedural block context (task/function/always/initial)
 bool isProceduralBlockContext(SyntaxKind kind) {
     switch (kind) {
@@ -155,11 +195,29 @@ CompletionContext CompletionContext::fromLocation(SlangDoc& doc, SourceLocation 
             return ctx;
         }
 
+        // A declaration the cursor is inside of is not a place where a new item can start, so
+        // statement-level completions do not apply to it
+        if (isDeclarationContext(kind)) {
+            ctx.kind = CompletionContextKind::Declaration;
+            return ctx;
+        }
+
         // Any other member syntax (continuous assign, hierarchy instantiation, etc.)
         // that are not on the first token may need signals
-        if (MemberSyntax::isKind(kind) && node->getFirstToken().range().end() < loc) {
-            ctx.kind = CompletionContextKind::Expression;
-            return ctx;
+        if (MemberSyntax::isKind(kind)) {
+            // Inside the item rather than after it: the cursor is in the middle of something that
+            // was already written, which is only valid for the rest of that same item. A
+            // declaration is where types go, and the module name of an instantiation is where
+            // module names go, so those keep the completions that fit them.
+            if (node->getLastToken().range().end() > loc && !isInstantiationType(*node, loc)) {
+                ctx.kind = isDeclaringMember(kind) ? CompletionContextKind::Declaration
+                                                   : CompletionContextKind::Expression;
+                return ctx;
+            }
+            if (node->getFirstToken().range().end() < loc) {
+                ctx.kind = CompletionContextKind::Expression;
+                return ctx;
+            }
         }
     }
 

@@ -32,7 +32,8 @@ void addKeywordCompletions(std::vector<lsp::CompletionItem>& results) {
         .kind = lsp::CompletionItemKind::Snippet,
         .documentation = std::nullopt,
         .filterText = "always_ff",
-        .insertText = "always_ff @($0) begin\n\t\nend",
+        // An empty sensitivity list is a syntax error, so the placeholder has to hold something
+        .insertText = "always_ff @(${1:posedge clk}) begin\n\t$0\nend",
         .insertTextFormat = lsp::InsertTextFormat::Snippet,
     });
     results.push_back(lsp::CompletionItem{

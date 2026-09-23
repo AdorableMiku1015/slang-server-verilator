@@ -62,6 +62,14 @@ The standard package is left out. Every compilation unit imports `std` implicitl
 verification classes (`mailbox`, `semaphore`, `process`, `weak_reference`) used to be offered at
 every declaration position, where they were the only items and never what was being typed.
 
+Accepting any item leaves the document parseable. What a suggestion inserts matches the position it
+is offered in: a word that is already being typed is replaced rather than appended to (so completing
+a name over a keyword gives that name and not the two joined together), a statement keyword is only
+offered where a module item can start and not inside a declaration or a parameter list, a connection
+that follows one without a comma brings its own separator, and a constructor is not offered as a
+member of an instance. The `always_ff` snippet carries a sensitivity list so that accepting it is
+not a syntax error on its own.
+
 Planned completions:
 
 - Named assignments (structs, functions, ports, params)

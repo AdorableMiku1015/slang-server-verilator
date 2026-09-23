@@ -229,6 +229,15 @@ public:
         for (auto& member : targetScope->members()) {
             if (member.name.empty() || member.name == previousLabel)
                 continue;
+            // A constructor is not something an instance can call
+            if (auto* subroutine = member.as_if<ast::SubroutineSymbol>();
+                subroutine && subroutine->flags.has(ast::MethodFlags::Constructor)) {
+                continue;
+            }
+            if (auto* prototype = member.as_if<ast::MethodPrototypeSymbol>();
+                prototype && prototype->flags.has(ast::MethodFlags::Constructor)) {
+                continue;
+            }
             previousLabel = member.name;
             results.push_back(getHierarchicalCompletion(*symbol, member, doc->getURI().str(),
                                                         followedByCall,

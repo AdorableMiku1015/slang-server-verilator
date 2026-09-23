@@ -2185,6 +2185,7 @@ TEST_CASE("InstancePortCompletion") {
     module instance_port_completion;
         logic clk, rst_n;
         logic [7:0] din, dout;
+        logic local_sig;
 
         sub_module #(
             .WIDTH(4),
@@ -2192,6 +2193,14 @@ TEST_CASE("InstancePortCompletion") {
         ) u_sub (
             .clk(clk),
             .
+        );
+
+        sub_module u_no_comma (
+            .clk(clk)
+        );
+
+        sub_module #(
+        ) u_no_params (
         );
     endmodule
     )");
@@ -2242,6 +2251,18 @@ TEST_CASE("InstancePortCompletion") {
         CHECK(findItem(items, "WIDTH") == items.end());
     }
 
+    SECTION("an empty override list still knows its parameters") {
+        // The parser has nothing to attach an empty `#()` to, so the instance has to be found from
+        // the tokens around it
+        auto empty = doc.before(") u_no_params").before(")");
+        auto items = empty.getCompletions();
+
+        auto width = findItem(items, "WIDTH");
+        REQUIRE(width != items.end());
+        REQUIRE(width->m_item.insertText);
+        CHECK(width->m_item.insertText->starts_with(".WIDTH(${1:"));
+    }
+
     SECTION("a dot inside a connection is an expression, not a port name") {
         auto items = doc.after("            .clk(").getCompletions(".");
         auto ports = std::count_if(items.begin(), items.end(), [](const CompletionHandle& item) {
@@ -2249,6 +2270,44 @@ TEST_CASE("InstancePortCompletion") {
         });
         CHECK(ports == 0);
     }
+
+    SECTION("a connection after one without a separator keeps its own") {
+        // Without a comma the two connections would run together, so the item brings one
+        auto noComma = doc.after("sub_module u_no_comma (\n            .clk(clk)");
+        auto items = noComma.getCompletions();
+
+        auto rst = findItem(items, "rst_n");
+        REQUIRE(rst != items.end());
+        REQUIRE(rst->m_item.insertText);
+        CHECK(*rst->m_item.insertText == ", .rst_n(${1:rst_n}),");
+
+        // A bare name here would still need the separator, so only connections are offered
+        CHECK(findItem(items, "local_sig") == items.end());
+    }
+}
+
+TEST_CASE("Completing over a keyword replaces it") {
+    ServerHarness server;
+
+    // A keyword is not a "word" token, but the text of it is still what the client filters on, so
+    // accepting an item has to replace it instead of being joined onto it
+    auto doc = server.openFile("keyword_completion.sv", R"(
+    module keyword_completion;
+        typedef logic [3:0] nibble_t;
+        logic foo;
+    endmodule
+    )");
+
+    auto cursor = doc.after("        logic");
+    auto items = cursor.getCompletions();
+    auto item = std::find_if(items.begin(), items.end(), [](const CompletionHandle& entry) {
+        return entry.m_item.label == "nibble_t";
+    });
+    REQUIRE(item != items.end());
+    item->insert();
+
+    CHECK(doc.getText().find("nibble_t foo;") != std::string::npos);
+    CHECK(doc.getText().find("logicnibble_t") == std::string::npos);
 }
 
 TEST_CASE("ExpectedEnumValuesComeFirst") {
