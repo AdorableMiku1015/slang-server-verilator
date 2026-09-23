@@ -342,12 +342,76 @@ std::optional<InstanceListSite> findInstanceListSite(const ShallowAnalysis& anal
 
 } // namespace
 
+bool isNumberToken(const parsing::Token& token) {
+    switch (token.kind) {
+        case parsing::TokenKind::IntegerLiteral:
+        case parsing::TokenKind::IntegerBase:
+        case parsing::TokenKind::UnbasedUnsizedLiteral:
+        case parsing::TokenKind::RealLiteral:
+        case parsing::TokenKind::TimeLiteral:
+            return true;
+        default:
+            return false;
+    }
+}
+
+/// True when the cursor is inside a literal, or right at the end of one. Clients keep asking for
+/// completions while a literal is typed, because digits and letters are word characters, but a
+/// literal is a complete value: no name can be written into it, and none can be joined onto its
+/// end.
+bool isLiteralSite(const ShallowAnalysis& analysis, slang::SourceLocation cursor) {
+    auto isLiteral = [](const parsing::Token& token) {
+        return isNumberToken(token) || token.kind == parsing::TokenKind::StringLiteral;
+    };
+
+    // The token at the cursor may be one that only starts there, which is a position in front of it
+    // rather than in it: that is where the user is about to write what replaces it
+    if (auto* inside = analysis.syntaxes.getTokenAt(cursor);
+        inside && isLiteral(*inside) && cursor > inside->range().start()) {
+        return true;
+    }
+
+    auto* before = analysis.syntaxes.getTokenBefore(cursor);
+    if (!before)
+        return false;
+
+    // A number waiting for its base (`4'`) is one token of width and one of apostrophe
+    if (before->kind == parsing::TokenKind::Apostrophe) {
+        auto* width = analysis.syntaxes.getTokenBefore(before->location());
+        return width && isNumberToken(*width);
+    }
+
+    // The end of a literal is where its last character was typed. A number arrives split up (a
+    // width, a base, and the digits), so the end of one is the end of its digits, not of the token
+    // its base is in.
+    return isLiteral(*before) && before->range().end() == cursor;
+}
+
+/// A site that cannot take a completion at all. It keeps the position classified (and visible in
+/// the log) while contributing no items, which is what stops clients from opening a list there.
+class SuppressedCompletionQuery final : public CompletionQuery {
+public:
+    explicit SuppressedCompletionQuery(lsp::Range replacementRange) :
+        CompletionQuery(std::move(replacementRange)) {}
+
+    CompletionQueryKind kind() const final { return CompletionQueryKind::Suppressed; }
+
+    void getCompletions(std::vector<lsp::CompletionItem>&, CompletionDispatch&,
+                        const std::shared_ptr<SlangDoc>&, const CompletionContext&) const final {}
+};
+
 std::unique_ptr<CompletionQuery> CompletionQuery::fromLocation(
     const SlangDoc& doc, const std::shared_ptr<ShallowAnalysis>& analysis,
     slang::SourceLocation cursor, const lsp::CompletionContext& lspContext) {
     using slang::parsing::TokenKind;
 
     auto site = getCompletionSite(doc, *analysis, cursor);
+
+    // A literal has nothing to complete, but the request arrives for every digit the user types
+    if (isLiteralSite(*analysis, cursor)) {
+        return std::make_unique<SuppressedCompletionQuery>(std::move(site.replacementRange));
+    }
+
     auto followedByCall = site.tokenAfter && site.tokenAfter->kind == TokenKind::OpenParenthesis &&
                           isSeparatedOnlyByWhitespace(*site.tokenAfter);
     auto followedByInstantiation = site.tokenAfter &&
@@ -405,6 +469,16 @@ std::unique_ptr<CompletionQuery> CompletionQuery::fromLocation(
         }
         return completions::StructMemberCompletionQuery::create(std::move(site.replacementRange),
                                                                 cursor, followedByColon);
+    }
+
+    // The client asks the moment `:` is typed, before anything follows it. Only `::` names a scope,
+    // which the case above handles: a colon of its own is followed by a statement, a value, or a
+    // range, and which of those it is only becomes clear once the name that starts it is typed, so
+    // the scope's symbols are not a list of what belongs there.
+    if (site.tokenBefore && site.tokenBefore->kind == TokenKind::Colon && !site.targetToken &&
+        lspContext.triggerKind == lsp::CompletionTriggerKind::TriggerCharacter &&
+        lspContext.triggerCharacter == ":") {
+        return std::make_unique<SuppressedCompletionQuery>(std::move(site.replacementRange));
     }
 
     return completions::MemberCompletionQuery::createLexical(std::move(site.replacementRange),

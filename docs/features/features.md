@@ -70,6 +70,12 @@ that follows one without a comma brings its own separator, and a constructor is 
 member of an instance. The `always_ff` snippet carries a sensitivity list so that accepting it is
 not a syntax error on its own.
 
+Positions that cannot take a completion offer nothing at all, rather than a list that has to be
+dismissed: inside a literal or at the end of one (a number is a complete value, and clients ask
+again for every digit that is typed into it, because digits are word characters), and after a lone
+`:`, which a client opens the list for as soon as it is typed. `::` still completes the scope, and
+invoking completion by hand after a colon still gives what can follow it.
+
 Planned completions:
 
 - Named assignments (structs, functions, ports, params)

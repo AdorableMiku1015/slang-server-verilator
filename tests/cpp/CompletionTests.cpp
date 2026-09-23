@@ -2352,6 +2352,155 @@ TEST_CASE("ExpectedEnumValuesComeFirst") {
     CHECK(count == 1);
 }
 
+TEST_CASE("Numbers and strings are not completion sites") {
+    ServerHarness server;
+
+    auto doc = server.openFile("literal_sites.sv", R"(
+    module literal_sites;
+        logic [3:0] value;
+        logic [7:0] data;
+        real ratio;
+        initial begin
+            value = 4'b0010;
+            value = 8'hff;
+            value = 3'd5;
+            value = 12;
+            ratio = 1.5;
+            value = '0;
+            data = 8'b1010_1010;
+            #1ns;
+            $display("value is %b", value);
+        end
+    endmodule
+    )");
+    doc.save();
+
+    // Every character of a literal is a keystroke that a client asks about, because digits and
+    // letters are word characters, but a literal is a complete value: no name can be written into
+    // it, and none can be joined onto its end
+    for (auto anchor : {"= 4'b0010",
+                        "= 4'b0",
+                        "= 4'b",
+                        "= 4'",
+                        "= 4",
+                        "= 8'hff",
+                        "= 8'hf",
+                        "= 8'h",
+                        "= 3'd5",
+                        "= 3'd",
+                        "= 12",
+                        "= 1",
+                        "= 1.5",
+                        "= 1.",
+                        "= '0",
+                        "= '",
+                        "= 8'b1010_1010",
+                        "= 8'b101",
+                        "#1ns",
+                        "#1n",
+                        "$display(\"",
+                        "$display(\"value",
+                        "$display(\"value is %b\""}) {
+        CAPTURE(anchor);
+        CHECK(doc.after(anchor).getCompletions().empty());
+    }
+
+    // The query is still classified, so a suppressed request is visible in the log as such
+    auto loc = doc.getLocation(doc.after("= 4'b0010").m_offset);
+    REQUIRE(loc);
+    auto ctx = CompletionContext::fromLocation(
+        *doc.doc, *loc, lsp::CompletionContext{.triggerKind = lsp::CompletionTriggerKind::Invoked});
+    CHECK(ctx.query->kind() == CompletionQueryKind::Suppressed);
+
+    // Typing one out character by character is what the requests during typing look like, and no
+    // step of it opens a list
+    auto typed = server.openFile("typed_number.sv", R"(
+    module typed_number;
+        logic [3:0] value;
+        initial begin
+            value = ;
+        end
+    endmodule
+    )");
+    auto cursor = typed.after("value = ");
+    for (auto character : std::string_view("4'b0010")) {
+        cursor.write(std::string(1, character));
+        CAPTURE(character);
+        CHECK(cursor.getCompletions().empty());
+    }
+
+    // A name is still completed where a name goes
+    auto afterNumber = doc.after("$display(\"value is %b\", ").getCompletions();
+    CHECK(std::ranges::any_of(afterNumber, [](const CompletionHandle& item) {
+        return item.m_item.label == "value";
+    }));
+    CHECK(!doc.after("$display(\"value is %b\", value);").getCompletions().empty());
+}
+
+TEST_CASE("A lone colon is not a completion site") {
+    ServerHarness server;
+
+    auto doc = server.openFile("colon_sites.sv", R"(
+    package colon_pkg;
+        typedef enum logic [1:0] {IDLE, RUN} state_e;
+    endpackage
+
+    module colon_sites;
+        import colon_pkg::*;
+        logic [7:0] data;
+        logic clk;
+        state_e state;
+        initial begin
+            clk = clk ? clk : clk;
+            state = colon_pkg::IDLE;
+            case (state)
+                IDLE: state = RUN;
+                default: state = IDLE;
+            endcase
+        end
+    endmodule
+    )");
+    doc.save();
+
+    // The client asks as soon as `:` is typed, but a colon on its own is followed by a statement, a
+    // value, or a range: which one it is is only known once the name that starts it is typed
+    for (auto anchor : {"clk ? clk :", "IDLE:", "default:", "logic [7:"}) {
+        CAPTURE(anchor);
+        CHECK(doc.after(anchor).getCompletions(":").empty());
+    }
+
+    // `::` is the colon that names something, and completing over it is what a package scope is for
+    auto scoped = doc.after("state = colon_pkg::").getCompletions(":");
+    CHECK(std::ranges::any_of(scoped, [](const CompletionHandle& item) {
+        return item.m_item.label == "IDLE";
+    }));
+
+    // A name that was already typed is still completed, and invoking the list by hand at a colon
+    // still answers with what can follow it
+    CHECK(!doc.after("clk ? clk : cl").getCompletions(":").empty());
+    CHECK(!doc.after("clk ? clk :").getCompletions().empty());
+    CHECK(!doc.after("default:").getCompletions().empty());
+
+    // A pattern key says which member is being set, and those members are still offered: a lone
+    // colon only removes the fallback to every symbol in scope
+    auto pattern = server.openFile("colon_pattern.sv", R"(
+    module colon_pattern;
+        typedef struct packed {
+            logic [3:0] a;
+            logic [3:0] b;
+        } pair_t;
+        pair_t pair;
+        initial begin
+            pair = '{a: 4'h1};
+        end
+    endmodule
+    )");
+    auto keys = pattern.after("pair = '{a").getCompletions(":");
+    CHECK(std::ranges::any_of(keys, [](const CompletionHandle& item) {
+        return item.m_item.label == "b";
+    }));
+}
+
 TEST_CASE("ProceduralCompletionRespectsDeclarationOrder") {
     ServerHarness server;
 
