@@ -171,11 +171,9 @@ void InstanceCompletionQuery::addCompletions(std::vector<lsp::CompletionItem>& r
                     insertText = name;
                 break;
             case syntax::SyntaxKind::PackageDeclaration:
-                // A package is only usable as a scope, so it is noise in an expression
-                if (context.kind == CompletionContextKind::Expression ||
-                    context.kind == CompletionContextKind::Procedural) {
-                    return;
-                }
+                // A package name is how a scope is named, so it can start anything written as
+                // `pkg::member`, which is a type or a value. Completing it is also what makes an
+                // unimported package reachable: the `::` that follows completes its members.
                 detail = " Package";
                 break;
             case syntax::SyntaxKind::ClassDeclaration:

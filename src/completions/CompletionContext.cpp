@@ -11,6 +11,7 @@
 #include "document/SlangDoc.h"
 
 #include "slang/ast/Scope.h"
+#include "slang/parsing/LexerFacts.h"
 #include "slang/syntax/SyntaxFacts.h"
 #include "slang/syntax/SyntaxKind.h"
 
@@ -205,6 +206,18 @@ CompletionContext CompletionContext::fromLocation(SlangDoc& doc, SourceLocation 
         // Any other member syntax (continuous assign, hierarchy instantiation, etc.)
         // that are not on the first token may need signals
         if (MemberSyntax::isKind(kind)) {
+            // The first token of an item is the type it starts with: a module or interface to
+            // instantiate, a type to declare, or the package of `pkg::name`. While that word is
+            // still being written nothing about the item is decided — the parser only guesses when
+            // it glues the word onto what follows — so the item is still starting here and the
+            // scope it starts in is what belongs at the cursor. A keyword is a type that is
+            // already settled, which makes the rest of the item a declaration that was written.
+            auto firstToken = node->getFirstToken();
+            if (!parsing::LexerFacts::isKeyword(firstToken.kind) &&
+                firstToken.range().start() <= loc && loc <= firstToken.range().end()) {
+                continue;
+            }
+
             // Inside the item rather than after it: the cursor is in the middle of something that
             // was already written, which is only valid for the rest of that same item. A
             // declaration is where types go, and the module name of an instantiation is where

@@ -54,6 +54,34 @@
         }
       },
       {
+        "label": "base_pkg",
+        "labelDetails": {
+          "detail": " Package"
+        },
+        "kind": "Module",
+        "documentation": {
+          "kind": "markdown",
+          "value": "````systemverilog\npackage base_pkg;\n````"
+        },
+        "sortText": "3",
+        "filterText": "base_pkg",
+        "insertText": "base_pkg",
+        "insertTextFormat": "PlainText",
+        "textEdit": {
+          "range": {
+            "start": {
+              "line": 10,
+              "character": 0
+            },
+            "end": {
+              "line": 10,
+              "character": 0
+            }
+          },
+          "newText": "base_pkg"
+        }
+      },
+      {
         "label": "clk",
         "labelDetails": {
           "detail": " input logic"
@@ -129,6 +157,34 @@
             }
           },
           "newText": "my_wire"
+        }
+      },
+      {
+        "label": "util_pkg",
+        "labelDetails": {
+          "detail": " Package"
+        },
+        "kind": "Module",
+        "documentation": {
+          "kind": "markdown",
+          "value": "````systemverilog\npackage util_pkg;\n````"
+        },
+        "sortText": "3",
+        "filterText": "util_pkg",
+        "insertText": "util_pkg",
+        "insertTextFormat": "PlainText",
+        "textEdit": {
+          "range": {
+            "start": {
+              "line": 10,
+              "character": 0
+            },
+            "end": {
+              "line": 10,
+              "character": 0
+            }
+          },
+          "newText": "util_pkg"
         }
       }
     ]

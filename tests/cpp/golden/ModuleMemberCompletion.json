@@ -470,6 +470,34 @@
         }
       },
       {
+        "label": "base_pkg",
+        "labelDetails": {
+          "detail": " Package"
+        },
+        "kind": "Module",
+        "documentation": {
+          "kind": "markdown",
+          "value": "````systemverilog\npackage base_pkg;\n````"
+        },
+        "sortText": "3",
+        "filterText": "base_pkg",
+        "insertText": "base_pkg",
+        "insertTextFormat": "PlainText",
+        "textEdit": {
+          "range": {
+            "start": {
+              "line": 64,
+              "character": 25
+            },
+            "end": {
+              "line": 64,
+              "character": 25
+            }
+          },
+          "newText": "base_pkg"
+        }
+      },
+      {
         "label": "bus_port",
         "labelDetails": {
           "detail": " bus_if.master"
@@ -481,8 +509,6 @@
         },
         "sortText": "0",
         "filterText": "bus_port",
-        "insertText": "bus_port",
-        "insertTextFormat": "PlainText",
         "textEdit": {
           "range": {
             "start": {
@@ -693,8 +719,6 @@
         },
         "sortText": "0",
         "filterText": "intf",
-        "insertText": "intf",
-        "insertTextFormat": "PlainText",
         "textEdit": {
           "range": {
             "start": {
@@ -801,8 +825,6 @@
         },
         "sortText": "0",
         "filterText": "u_sub",
-        "insertText": "u_sub",
-        "insertTextFormat": "PlainText",
         "textEdit": {
           "range": {
             "start": {
@@ -815,6 +837,34 @@
             }
           },
           "newText": "u_sub"
+        }
+      },
+      {
+        "label": "util_pkg",
+        "labelDetails": {
+          "detail": " Package"
+        },
+        "kind": "Module",
+        "documentation": {
+          "kind": "markdown",
+          "value": "````systemverilog\npackage util_pkg;\n````"
+        },
+        "sortText": "3",
+        "filterText": "util_pkg",
+        "insertText": "util_pkg",
+        "insertTextFormat": "PlainText",
+        "textEdit": {
+          "range": {
+            "start": {
+              "line": 64,
+              "character": 25
+            },
+            "end": {
+              "line": 64,
+              "character": 25
+            }
+          },
+          "newText": "util_pkg"
         }
       },
       {

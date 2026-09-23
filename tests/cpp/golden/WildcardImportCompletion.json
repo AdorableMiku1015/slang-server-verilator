@@ -164,6 +164,34 @@
         }
       },
       {
+        "label": "base_pkg",
+        "labelDetails": {
+          "detail": " Package"
+        },
+        "kind": "Module",
+        "documentation": {
+          "kind": "markdown",
+          "value": "````systemverilog\npackage base_pkg;\n````"
+        },
+        "sortText": "3",
+        "filterText": "base_pkg",
+        "insertText": "base_pkg",
+        "insertTextFormat": "PlainText",
+        "textEdit": {
+          "range": {
+            "start": {
+              "line": 56,
+              "character": 28
+            },
+            "end": {
+              "line": 56,
+              "character": 28
+            }
+          },
+          "newText": "base_pkg"
+        }
+      },
+      {
         "label": "byte_t",
         "labelDetails": {
           "detail": " PackedArrayType",
@@ -434,6 +462,34 @@
           },
           "newText": "result"
         }
+      },
+      {
+        "label": "util_pkg",
+        "labelDetails": {
+          "detail": " Package"
+        },
+        "kind": "Module",
+        "documentation": {
+          "kind": "markdown",
+          "value": "````systemverilog\npackage util_pkg;\n````"
+        },
+        "sortText": "3",
+        "filterText": "util_pkg",
+        "insertText": "util_pkg",
+        "insertTextFormat": "PlainText",
+        "textEdit": {
+          "range": {
+            "start": {
+              "line": 56,
+              "character": 28
+            },
+            "end": {
+              "line": 56,
+              "character": 28
+            }
+          },
+          "newText": "util_pkg"
+        }
       }
     ]
   },
@@ -599,6 +655,34 @@
             }
           },
           "newText": "SUBTRACT"
+        }
+      },
+      {
+        "label": "base_pkg",
+        "labelDetails": {
+          "detail": " Package"
+        },
+        "kind": "Module",
+        "documentation": {
+          "kind": "markdown",
+          "value": "````systemverilog\npackage base_pkg;\n````"
+        },
+        "sortText": "3",
+        "filterText": "base_pkg",
+        "insertText": "base_pkg",
+        "insertTextFormat": "PlainText",
+        "textEdit": {
+          "range": {
+            "start": {
+              "line": 59,
+              "character": 12
+            },
+            "end": {
+              "line": 59,
+              "character": 12
+            }
+          },
+          "newText": "base_pkg"
         }
       },
       {
@@ -897,6 +981,34 @@
             }
           },
           "newText": "result"
+        }
+      },
+      {
+        "label": "util_pkg",
+        "labelDetails": {
+          "detail": " Package"
+        },
+        "kind": "Module",
+        "documentation": {
+          "kind": "markdown",
+          "value": "````systemverilog\npackage util_pkg;\n````"
+        },
+        "sortText": "3",
+        "filterText": "util_pkg",
+        "insertText": "util_pkg",
+        "insertTextFormat": "PlainText",
+        "textEdit": {
+          "range": {
+            "start": {
+              "line": 59,
+              "character": 12
+            },
+            "end": {
+              "line": 59,
+              "character": 12
+            }
+          },
+          "newText": "util_pkg"
         }
       }
     ]

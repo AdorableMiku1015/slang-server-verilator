@@ -127,6 +127,29 @@ bool isSeparatedOnlyByWhitespace(const slang::parsing::Token& token) {
     });
 }
 
+/// True when the cursor is in the module name of an instantiation that is already written: the
+/// parser attached an instance name to it, or a parameter list. Completing that name replaces the
+/// module, so the item keeps its source shape instead of bringing a second instance along. A word
+/// the parser glued to whatever follows, on the other hand, is not an instantiation yet.
+bool isWrittenInstantiation(const ShallowAnalysis& analysis, slang::SourceLocation cursor) {
+    for (auto* node = analysis.syntaxes.getSyntaxAt(cursor); node; node = node->parent) {
+        if (auto* instantiation = node->as_if<syntax::HierarchyInstantiationSyntax>()) {
+            auto typeRange = instantiation->type.range();
+            if (cursor < typeRange.start() || cursor > typeRange.end())
+                return false;
+            if (instantiation->parameters)
+                return true;
+            return std::ranges::any_of(instantiation->instances, [](auto* instance) {
+                return instance->decl && !instance->decl->name.isMissing();
+            });
+        }
+        // Another item was reached first, so this one is not an instantiation
+        if (syntax::MemberSyntax::isKind(node->kind))
+            return false;
+    }
+    return false;
+}
+
 /// Items that name a module, interface, or class declaration, which can be instantiated
 bool isInstantiableKind(lsp::CompletionItemKind kind) {
     return kind == lsp::CompletionItemKind::Module || kind == lsp::CompletionItemKind::Interface ||
@@ -414,10 +437,7 @@ std::unique_ptr<CompletionQuery> CompletionQuery::fromLocation(
 
     auto followedByCall = site.tokenAfter && site.tokenAfter->kind == TokenKind::OpenParenthesis &&
                           isSeparatedOnlyByWhitespace(*site.tokenAfter);
-    auto followedByInstantiation = site.tokenAfter &&
-                                   isSeparatedOnlyByWhitespace(*site.tokenAfter) &&
-                                   (site.tokenAfter->kind == TokenKind::Identifier ||
-                                    site.tokenAfter->kind == TokenKind::Hash);
+    auto followedByInstantiation = isWrittenInstantiation(*analysis, cursor);
     auto followedByColon = site.tokenAfter && site.tokenAfter->kind == TokenKind::Colon;
 
     // Inside `u_inst (...)` or `u_inst #(...)` the interesting names are the ports or parameters of

@@ -2159,8 +2159,12 @@ TEST_CASE("CompletionRankingAndKinds") {
         REQUIRE(type != items.end());
         CHECK(type->m_item.kind == lsp::CompletionItemKind::Struct);
 
-        // Packages are scope names, so they are noise in an expression
-        CHECK(findItem(items, "base_pkg") == items.end());
+        // A package name starts `pkg::member`, which can be written in an expression, so it is
+        // offered where it can be referenced rather than only where a declaration can start
+        auto package = findItem(items, "base_pkg");
+        REQUIRE(package != items.end());
+        CHECK(package->m_item.kind == lsp::CompletionItemKind::Module);
+        CHECK(package->m_item.labelDetails->detail == " Package");
     }
 }
 
@@ -2499,6 +2503,138 @@ TEST_CASE("A lone colon is not a completion site") {
     CHECK(std::ranges::any_of(keys, [](const CompletionHandle& item) {
         return item.m_item.label == "b";
     }));
+}
+
+TEST_CASE("A package name completes where its members are written") {
+    ServerHarness server;
+
+    auto doc = server.openFile("package_reference.sv", R"(
+    package state_pkg;
+        typedef enum logic [1:0] {IDLE, RUN} state_e;
+        localparam int DEPTH = 4;
+    endpackage
+
+    module package_items;
+        logic clk;
+        state_pk
+    endmodule
+
+    module package_expression;
+        logic clk;
+        logic [3:0] value;
+        always_comb begin
+            value = state_pk;
+        end
+        assign clk = state_pk;
+    endmodule
+    )");
+    doc.save();
+
+    auto findItem = [](std::vector<CompletionHandle>& items, std::string_view label) {
+        return std::find_if(items.begin(), items.end(), [&](const CompletionHandle& item) {
+            return item.m_item.label == label;
+        });
+    };
+
+    // A package does not have to be imported to be referenced: the name is completed wherever a
+    // `pkg::member` reference can be written, which includes the middle of an expression
+    for (auto anchor : {"        state_pk", "value = state_pk", "assign clk = state_pk"}) {
+        CAPTURE(anchor);
+        auto items = doc.after(anchor).getCompletions();
+        auto package = findItem(items, "state_pkg");
+        REQUIRE(package != items.end());
+        CHECK(package->m_item.kind == lsp::CompletionItemKind::Module);
+        REQUIRE(package->m_item.labelDetails);
+        CHECK(package->m_item.labelDetails->detail == " Package");
+        CHECK(package->m_item.sortText == "3");
+    }
+
+    // Accepting it and typing the scope is the way the members are reached
+    auto flow = server.openFile("package_flow.sv", R"(
+    package flow_pkg;
+        localparam int DEPTH = 4;
+    endpackage
+
+    module package_flow;
+        logic [3:0] value;
+        initial begin
+            value = flow_pk
+        end
+    endmodule
+    )");
+    flow.save();
+
+    auto cursor = flow.after("value = flow_pk");
+    auto items = cursor.getCompletions();
+    auto package = findItem(items, "flow_pkg");
+    REQUIRE(package != items.end());
+    // Accepting it puts the cursor after the name it inserted, which is where the colon goes
+    package->insert();
+    package->m_cursor.write("::");
+
+    auto members = flow.after("value = flow_pkg::").getCompletions(":");
+    CHECK(std::ranges::any_of(members, [](const CompletionHandle& item) {
+        return item.m_item.label == "DEPTH";
+    }));
+}
+
+TEST_CASE("A module name completes when the item below it is a declaration") {
+    // A word the parser glued onto what follows it is not an item that was already written: the
+    // module name has to stay completable, and the instance it would bring has to stay with it
+    ServerHarness server;
+
+    auto doc = server.openFile("module_item.sv", R"(
+    module sub_mod (input logic clk);
+    endmodule
+
+    module module_followed;
+        logic clk;
+        logic [3:0] value;
+
+        sub_mo
+        logic foo;
+    endmodule
+
+    module module_written;
+        logic clk;
+        sub_mod u_one (.clk(clk));
+    endmodule
+
+    module module_named;
+        logic clk;
+        sub_mod u_two;
+    endmodule
+    )");
+    doc.save();
+
+    auto findItem = [](std::vector<CompletionHandle>& items, std::string_view label) {
+        return std::find_if(items.begin(), items.end(), [&](const CompletionHandle& item) {
+            return item.m_item.label == label;
+        });
+    };
+
+    auto items = doc.after("        sub_mo").getCompletions();
+    auto module = findItem(items, "sub_mod");
+    REQUIRE(module != items.end());
+    CHECK(module->m_item.kind == lsp::CompletionItemKind::Module);
+
+    // The declaration on the next line is not this module's instance, so the item still brings one
+    module->resolve();
+    CHECK(module->m_item.insertTextFormat == lsp::InsertTextFormat::Snippet);
+    CHECK(module->m_item.insertText.value_or("").starts_with("sub_mod "));
+
+    // A module name that already has its instance written keeps its source shape: completing it
+    // replaces the name rather than adding a second instance
+    auto existing = doc.after("        logic clk;\n        sub_mod").getCompletions();
+    auto rename = findItem(existing, "sub_mod");
+    REQUIRE(rename != existing.end());
+    rename->resolve();
+    CHECK(rename->m_item.insertText == "sub_mod");
+    CHECK(rename->m_item.insertTextFormat == lsp::InsertTextFormat::PlainText);
+
+    // The instance name itself is not a place for module names
+    auto named = doc.after("        sub_mod u_two").getCompletions();
+    CHECK(findItem(named, "sub_mod") == named.end());
 }
 
 TEST_CASE("ProceduralCompletionRespectsDeclarationOrder") {

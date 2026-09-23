@@ -76,6 +76,15 @@ again for every digit that is typed into it, because digits are word characters)
 `:`, which a client opens the list for as soon as it is typed. `::` still completes the scope, and
 invoking completion by hand after a colon still gives what can follow it.
 
+A package name is completed wherever a `pkg::member` reference can be written, so an unimported
+package is reached by typing part of its name and then `::`, in an expression as much as in a
+declaration. The first word of an item is what decides what it is — a type, a package, or a module
+to instantiate — so while that word is still being written the whole list of the scope it starts in
+is offered, even when the parser glued the word onto the declaration that follows it. A module name
+that already has its instance written keeps its source shape: the completion replaces the name
+rather than adding a second instance, and an item the parser only guessed at still brings the
+instantiation with it.
+
 Planned completions:
 
 - Named assignments (structs, functions, ports, params)
