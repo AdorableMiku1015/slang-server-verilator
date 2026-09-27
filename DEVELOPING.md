@@ -21,26 +21,46 @@ Run `cmake --build build -j --target slang_server` to build `build/bin/slang-ser
 
 ### Incremental builds with a non-English MSVC
 
-CMake's Ninja generator parses the localized `/showIncludes` output to record header dependencies,
-and it stores the localized prefix it saw at configure time (`msvc_deps_prefix` in
-`CMakeFiles/rules.ninja`). If the bytes a build actually produces no longer match that prefix (a
-different console code page than the one used when configuring, or a build directory configured by
-a different toolchain), the prefix never matches. No header dependencies are recorded, the scanner
-finds no work to do after a header edit, and the linked binary mixes objects compiled against
-different layouts. That crashes in places that have nothing to do with the change — a very
-confusing failure mode.
+CMake's Ninja generator parses cl's `/showIncludes` output to record header dependencies, and it
+stores the prefix it saw while configuring (`msvc_deps_prefix` in `CMakeFiles/rules.ninja`). Current
+CMake detects a localized prefix on its own, so a non-English MSVC needs no special handling: the
+prefix is whatever the compiler printed at configure time, and dependencies are recorded normally.
 
-`VSLANG=1033` does *not* change these messages on recent MSVC, so do not rely on it. If a header
-edit does not cause rebuilds, delete the build directory and configure it again:
+What breaks dependency recording is a *mismatch* between the language the compiler uses while
+configuring and the language it uses during the build, because then no line matches the recorded
+prefix. No header dependencies are recorded, the scanner finds no work to do after a header edit,
+and the linked binary mixes objects compiled against different layouts. That crashes in places that
+have nothing to do with the change — a very confusing failure mode. Installing or removing a Visual
+Studio language pack changes the language the compiler defaults to, and `VSLANG` selects that
+language directly (`1033` English, `2052` Chinese) once the matching pack is installed.
+
+`VSLANG` reaches the compiler through the environment it inherits, so set it for the configure and
+the build steps or for neither. Setting it in the configure step alone produces exactly the mismatch
+above: with `set(ENV{VSLANG} ...)` in `CMakeLists.txt`, or with a `CMAKE_CXX_COMPILER_LAUNCHER`
+that wraps the compiler, header dependencies went unrecorded and a header edit rebuilt nothing. An
+MSVC that has the English pack installed already defaults to English, so there is nothing to force.
+
+After changing language packs or `VSLANG`, drop the recorded prefix and configure again, then
+rebuild so the objects are recorded against the new prefix. If a header edit still causes no
+rebuilds, clean the build directory so that every object is recorded again:
 
 ```bash
-rm -rf build/win64-release
+rm build/win64-release/CMakeCache.txt
 cmake --preset win64-release
 cmake --build build/win64-release -j
 ```
 
-A quick check that header dependencies are being tracked: `ninja -C build/win64-release -n` after
-touching a widely included header should list the objects that include it.
+Two quick checks. The recorded prefix has to agree with what the compiler prints, and the recorded
+dependencies have to list the headers of the translation unit:
+
+```bash
+grep msvc_deps_prefix build/win64-release/CMakeFiles/rules.ninja
+ninja -C build/win64-release -t deps \
+  CMakeFiles/slang_server_obj_lib.dir/src/document/ShallowAnalysis.cpp.obj
+```
+
+`ninja -C build/win64-release -n -d explain`, after touching a widely included header, names the
+objects that include it.
 
 ## Cpp Testing
 
