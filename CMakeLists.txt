@@ -238,8 +238,11 @@ if(SLANG_SERVER_INCLUDE_TESTS)
     set(find_pkg_args "FIND_PACKAGE_ARGS" "${catch2_min_version}")
   endif()
 
+  # SYSTEM keeps warnings raised inside Catch2 out of the build: its INFO and WARN clash with the
+  # logging macros of the same name, which the tests deliberately leave to Catch2.
   FetchContent_Declare(
     Catch2
+    SYSTEM
     GIT_REPOSITORY https://github.com/catchorg/Catch2.git
     GIT_TAG v3.10.0
     GIT_SHALLOW ON

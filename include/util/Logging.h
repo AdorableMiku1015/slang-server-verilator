@@ -15,6 +15,17 @@
 
 #include "slang/text/SourceLocation.h"
 
+// These four names are generic enough that other headers claim them: wingdi.h defines ERROR as a
+// region result code, and Catch2 defines INFO and WARN for its assertion messages. Redefining one
+// of them draws a C4005 at every include site, and which of the two definitions wins would depend
+// on include order. Drop whatever arrived first, so that the server's logging is what the code
+// after this header gets; a header that claims them afterwards still wins, which is how the tests
+// hand INFO and WARN to Catch2.
+#undef DEBUG
+#undef INFO
+#undef WARN
+#undef ERROR
+
 /// Per-request detail, hidden unless the log level is `debug`
 #define DEBUG(format_string, ...) server::logging::debug(format_string __VA_OPT__(, ) __VA_ARGS__);
 
