@@ -16,12 +16,14 @@ supported, off by default: set `slang.lint.verilator.enabled`, and `slang.lint.v
 where each entry may hold several arguments and may quote them (`["--top-module top", "-Wall"]`).
 Set `slang.lint.enabled` to `false` to keep only the external linter's diagnostics.
 
-It lints the [top level](hdl/hdl.md) when one is set, and the file you are editing when none is,
-running on save, when you switch to another file while no top level is set, and when the top level
-or the build being compiled changes. The tool is handed a path, so it reads what is on disk: a
-buffer with unsaved edits is linted in the state it was last saved in. Diagnostics land on every
-file the tool reports on, including headers pulled in by the file that was linted, and the ones for
-a file that no longer has anything to report are dropped with the run that finds that out.
+It runs with the workspace folder as its working directory, which is also where verilator looks for
+`include` files, next to the `-I<dir>` directories it is given (`-I` has to be written attached to
+its directory). It lints the [top level](hdl/hdl.md) when one is set, and the file you are editing
+when none is, running on save, when you switch to another file while no top level is set, and when
+the top level or the build being compiled changes. The tool is handed a path, so it reads what is on
+disk: a buffer with unsaved edits is linted in the state it was last saved in. Diagnostics land on
+every file the tool reports on, including headers pulled in by the file that was linted, and the
+ones for a file that no longer has anything to report are dropped with the run that finds that out.
 
 
 ### Hovers and Go-to Definition

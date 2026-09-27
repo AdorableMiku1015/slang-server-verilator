@@ -19,20 +19,28 @@ commits: 26e4e8c..ca5f1ee
 **Verification**
 
 - `npx tsc -p . --outDir out`（clients/vscode）：PASS，0 error
-- `npx tape "out/test/**/*.js"`：PASS 160/160（新增 `verilatorOutput.test.ts`、`runFailure.test.ts`）
+- `npx tape "out/test/**/*.js"`：PASS 169/169（`verilatorOutput.test.ts`、`runFailure.test.ts`）
 - `npx eslint src --ext ts`：FAIL，唯一一条 `src/extension.ts:270` `@typescript-eslint/no-misused-promises` — **PRE-EXISTING**（对 `git show HEAD:` 的原始文件跑同一命令得到同一条），在 `slang/internalError` 通知处理里，与本次改动无关
 - `pnpm run check-types`：`gen-types` 步骤失败 — **PRE-EXISTING**（`clients/vscode/pnpm-workspace.yaml` 没有 `packages:`，`-F slanglib` 无匹配），类型检查本身由上一条 tsc 覆盖
-- prettier / pre-commit：本机未安装（`node_modules` 里没有 prettier、无 prek），格式按 `.prettierrc` 手工对齐（2 空格、单引号、无分号、100 列、es5 尾逗号），逐文件确认无超长行
+- prettier / pre-commit：本机未安装（`node_modules` 里没有 prettier、无 prek），格式按 `.prettierrc` 手工对齐（2 空格、单引号、无分号、100 列、es5 尾逗号）；真实输出样本位于模板字符串内、逐字保留，不参与换行
+- **真实 verilator 实测**（`C:\verilator\verilator_bin.exe`，v5.050-284-gd1e21df9b，MSYS2 构建；脚本复刻 `ExternalLinter` 的参数构造、`execFile` 选项、解析与判定，只缺 `vscode` 层）：
+  - 诊断全部走 stderr（stdout 只有 Verilation Report），与 `run()` 只读 stderr 一致
+  - 退出码语义确认：干净文件退出 0 且无输出；有告警/错误退出 1 —— `runFailure` 的「非零不代表失败」前提成立
+  - 解析结果与真实输出逐条一致：`WIDTHEXPAND`/`WIDTHTRUNC`/`UNUSEDSIGNAL` 类别、行列（列 1-based，映射后 0-based 落在正确字符）、标记长度 1（`^`）、8（`^~~~~~~~`）、10、9；`: ... note: In instance` 在源码片段之前、`... For warning description`/`lint_off` 在之后，都不产生多余 finding；`Exiting due to N warning(s)` 汇总行被丢掉
+  - include 场景：诊断归属到头文件 `inc.svh`，`uses_inc.sv:3:1: ... note: In file included from` 不被当成新诊断
+  - 路径形态实测：绝对路径目标回显绝对路径；相对目标回显 `sub\child.sv`（反斜杠）与 `rtl\defs.svh`；`groupFindingsByFile` 按运行 cwd 全部解析为正确绝对路径——这正是「相对路径按 cwd 而非 workspace folder」这条修正的真实证据（旧实现在没有工作区时会把头文件诊断挂到被 lint 的文件上）
+  - 带空格的路径与带空格的参数：`--top-module plain` 经 `parseArgsStringToArgv` 拆成两个 argv，含空格的绝对目标作为单个 argv 传入，进程正常退出——移植版 `arg.split(/\s+/)` 的老问题在进程级确认修好
+  - 目标文件不存在时：`%Error: Cannot find file containing module: ...` 无位置 → 判为不可用运行 → 保留上一轮诊断并提示一次（设计如此，且有真实触发路径）
 - 差分脚本（临时、已删除）把旧的移植版正则与新解析器在五种输出形态上对跑：file/line/column/message/code 一致，差异只有预期中的 severity 归一化与高亮长度（33→6、8→1，即真正的标记区间而非垃圾值）
-- **未验证**：本机没有 verilator，也没有可用的扩展宿主测试装置（`integration/runTest.ts` 需要下载 VS Code），所以运行期行为——哪些触发点各跑一次、诊断落在哪个文件、失败只提示一次、去抖与在途重跑——只做到代码级与类型级确认
+- **未验证**：扩展宿主内的部分——哪个触发点各跑一次、去抖合并、在途重跑、失败只提示一次、诊断在 Problems 面板的落点——本机没有可运行的扩展宿主测试装置（`integration/runTest.ts` 需要下载 VS Code），只做到代码级确认（见 T7）
 
 **Journey log**
 
 - 移植版的 caret 行长度是 `pline.length - pline.indexOf('^')`，取到的那一行常常不是 caret 行（`indexOf` 返回 -1），于是 33、8 这样的垃圾长度被写进诊断；差分脚本给出了前后对照，测试把「找不到标记就回退为 1」固定下来。
 - 复查指出只按 `signal` 判断崩溃不够：Windows 的访问违例是「数值 code + signal null」，光看信号抓不到。`runFailure()` 因此引入 `0x80000000` 下限，并且只有在解析出至少一条可定位诊断时才承认非零退出是「工具报告了问题」。
-- 决定不恢复旧 `LintManager` 里「关闭文档就清诊断」的行为：下一次运行会按已上报文件集合把它清掉，而关掉标签页时立刻抹掉尚未修好的问题反而更糟。
+- 真机跑 verilator 才发现两件猜不出来的事：诊断的 `: ... note: In instance` 注释行在**源码片段之前**（不是之后），以及 include 头文件的路径是相对**进程 cwd** 打印的——前者决定了标记扫描必须扫到下一条诊断为止，后者正是「按 cwd 解析」这条修正的实证。三份真实输出已固化为回归用例。
 - `lib/runner.ts` 的 `ToggleToolConfig` 看起来正好可用，但继承会把无意义的 `runAtLocation` 设置项带进配置树，且它的 `args` 是单个字符串、与既有数组键不兼容；改为组合 `PathConfigObject`/`ConfigObject` 原语，`runner.ts` 本身（main 上的死代码）不动。
-- 三轮独立复审的结论：初版的两个 critical（异常终止被当成成功、运行期没有异常保护）与随后的中等问题都已修掉，判定链最后收敛成一个可测的纯函数；剩下的唯一缺口是本环境无法做的运行期验证。
+- 三轮独立复审：初版两个 critical（异常终止被当成成功、运行期没有异常保护）与随后的中等问题均已修掉，判定链最后收敛成一个可测的纯函数；同时决定不恢复旧实现「关闭文档就清诊断」的行为——下一轮运行会按已上报文件集合清掉它，而关掉标签页时立刻抹掉尚未修好的问题更糟。
 
 ## [S1] Problem
 
@@ -161,8 +169,8 @@ export function runFailure(
 
 ### S2.9 测试
 
-- tape 覆盖 `parseVerilatorOutput` / `groupFindingsByFile`：绝对路径、相对路径、Windows 盘符、带类别警告、无位置消息、汇总行、caret 与 `~~~` 长度、注释行在前的告警、下一条诊断的 caret 不可混用、一次多条诊断、缺 caret 回退、空输出；`runFailure`：退出码 0、非零且有/无定位结果、崩溃状态、字符串 code、超时、信号、无状态。
-- 触发、进程执行、诊断落地依赖 `vscode`，与仓库现状一致不做单测；由 `tsc`、`eslint`、`tape` 与代码审查覆盖，运行期行为需要在装有 verilator 的环境里人工确认（见 T7）。
+- tape 覆盖 `parseVerilatorOutput` / `groupFindingsByFile`：绝对路径、相对路径（含反斜杠形式）、Windows 盘符、带类别警告、无位置消息、汇总行、caret 与 `~~~` 长度、注释行在前的告警、下一条诊断的 caret 不可混用、一次多条诊断、缺 caret 回退、空输出，以及三份从 verilator v5.050 实测抓取的输出（含头文件归属、注释/描述行、`Exiting due to` 汇总行）；`runFailure`：退出码 0、非零且有/无定位结果、崩溃状态、字符串 code、超时、信号、无状态。
+- 触发、进程执行、诊断落地依赖 `vscode`，与仓库现状一致不做单测；参数构造、进程执行、解析、分组与判定已用真实 verilator 逐条核对（见 Report），扩展宿主内的触发与提示行为仍需在装有 verilator 的 VS Code 里人工确认（见 T7）。
 
 ## [S3] Out of Scope
 
@@ -182,4 +190,5 @@ export function runFailure(
 - [x] T3: 解开全局耦合、收敛触发逻辑 — `ProjectComponent` 增加 `onDidChangeCompilationSource` 与 `compilationKey`，`LintManager.watchCompilationSource()` + 去抖 + 在途重跑，删除 `ext` 双向引用；验收：`linter/` 下无 `../extension` import、`ProjectComponent` 无 `lintManager` 引用（grep 验证） (covers: S2.3, S2.4; depends: T2)
 - [x] T4: 修正诊断落地与失败路径 — 相对路径按运行 cwd 解析、按文件增量清理、`-sv` 依据扩展名、`runFailure` 判定与失败可见性；验收：`tape`/`tsc`/`eslint` 通过，判定逻辑有单测覆盖 (covers: S2.5, S2.7; depends: T2)
 - [x] T5: 同步文档并全量验证 — 更新 `clients/vscode/CONFIG.md` 与 `docs/features/features.md`；验收：文档与实际生成形态一致，`tsc`、`tape` 绿，`eslint` 仅剩预存在的 `extension.ts:270` (covers: S2.2)
-- [ ] T7: 在装有 verilator 的环境人工确认运行期行为（触发点各跑一次、诊断落点、无 verilator 时只提示一次、去抖与在途重跑）— 本机无 verilator 与可用扩展宿主装置，属环境阻塞 (depends: T2, T4)
+- [x] T7: 用真实 verilator 核对参数构造、进程执行、解析、分组与判定 — 复刻 `ExternalLinter` 的运行路径（只缺 vscode）跑 `C:\verilator\verilator_bin.exe` v5.050：退出码语义、stderr 归属、类别/行列/标记长度、注释行与描述行、include 头文件归属、绝对与相对（含反斜杠）路径、带空格路径与参数、目标文件缺失，全部与实现一致；真实输出已固化为回归用例 (depends: T2, T4)
+- [ ] T8: 在扩展宿主（装了 verilator 的 VS Code）里确认触发与提示行为：保存/切换编辑器/设置 top level 各触发一次、去抖合并、运行期间的新请求在结束后重跑、无 verilator 时只提示一次、诊断落在 Problems 面板的正确文件 — 本机没有可运行的扩展宿主测试装置 (`integration/runTest.ts` 需要下载 VS Code)

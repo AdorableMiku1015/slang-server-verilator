@@ -176,6 +176,85 @@ tape('parseVerilatorOutput: returns nothing for empty output', (assert) => {
   assert.end()
 })
 
+// Captured from verilator v5.050 (MSYS2 build) running `verilator_bin --lint-only -sv width.sv`
+const realWidthOutput = `%Warning-WIDTHEXPAND: width.sv:2:16: Operator ADD expects 16 bits on the LHS, but LHS's VARREF 'a' generates 4 bits.
+                                   : ... note: In instance 'width'
+    2 |   assign y = a + 16'h1234;
+      |                ^
+                      ... For warning description see https://verilator.org/warn/WIDTHEXPAND?v=0.000
+                      ... Use "/* verilator lint_off WIDTHEXPAND */" and lint_on around source to disable this message.
+%Warning-WIDTHTRUNC: width.sv:2:12: Operator ASSIGNW expects 4 bits on the Assign RHS, but Assign RHS's ADD generates 16 bits.
+                                  : ... note: In instance 'width'
+    2 |   assign y = a + 16'h1234;
+      |            ^
+                     ... For warning description see https://verilator.org/warn/WIDTHTRUNC?v=0.000
+                     ... Use "/* verilator lint_off WIDTHTRUNC */" and lint_on around source to disable this message.
+%Error: Exiting due to 2 warning(s)`
+
+// Captured from verilator v5.050 (MSYS2 build) running `verilator_bin --lint-only -sv uses_inc.sv`
+const realIncludeOutput = `%Warning-WIDTHTRUNC: inc.svh:1:26: Operator ASSIGN expects 4 bits on the Assign RHS, but Assign RHS's CONST '16'h1234' generates 16 bits.
+                                 : ... note: In instance 'uses_inc'
+    1 |   logic [3:0] head_sig = 16'h1234;
+      |                          ^~~~~~~~
+                     uses_inc.sv:3:1: ... note: In file included from 'uses_inc.sv'
+                     ... For warning description see https://verilator.org/warn/WIDTHTRUNC?v=0.000
+                     ... Use "/* verilator lint_off WIDTHTRUNC */" and lint_on around source to disable this message.
+%Error: Exiting due to 1 warning(s)`
+
+// Captured from verilator v5.050 (MSYS2 build) running `verilator_bin --lint-only -sv missing_file.sv`,
+// with the "Looked in" listing it prints in between left out
+const realMissingTargetOutput = `%Error: Cannot find file containing module: 'missing_file.sv'
+        ... See the manual at https://verilator.org/verilator_doc.html?v=0.000 for more assistance.
+%Error: Exiting due to 1 error(s)`
+
+tape('parseVerilatorOutput: reads what verilator actually prints for a warning', (assert) => {
+  const findings = parseVerilatorOutput(realWidthOutput)
+
+  assert.deepEqual(
+    findings.map((f) => [
+      f.severity,
+      f.code,
+      f.location?.line,
+      f.location?.column,
+      f.location?.length,
+    ]),
+    [
+      ['warning', 'WIDTHEXPAND', 2, 16, 1],
+      ['warning', 'WIDTHTRUNC', 2, 12, 1],
+    ],
+    'the notes, the description lines and the summary are not findings of their own'
+  )
+  assert.equal(
+    findings[0].message,
+    "Operator ADD expects 16 bits on the LHS, but LHS's VARREF 'a' generates 4 bits."
+  )
+  assert.end()
+})
+
+tape('parseVerilatorOutput: attributes a warning in an included header to the header', (assert) => {
+  const findings = parseVerilatorOutput(realIncludeOutput)
+
+  assert.equal(findings.length, 1, 'the "included from" note is not a finding of its own')
+  assert.equal(findings[0].code, 'WIDTHTRUNC')
+  assert.deepEqual(findings[0].location, {
+    file: 'inc.svh',
+    line: 1,
+    column: 26,
+    length: 8,
+  })
+  assert.end()
+})
+
+tape('parseVerilatorOutput: keeps the message of an error that has no file', (assert) => {
+  const findings = parseVerilatorOutput(realMissingTargetOutput)
+
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].severity, 'error')
+  assert.equal(findings[0].message, "Cannot find file containing module: 'missing_file.sv'")
+  assert.equal(findings[0].location, undefined)
+  assert.end()
+})
+
 const cwd = path.resolve('ws')
 
 function finding(file: string, line: number): LinterFinding {
