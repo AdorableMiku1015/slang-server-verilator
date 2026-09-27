@@ -72,9 +72,14 @@ not a syntax error on its own.
 
 Positions that cannot take a completion offer nothing at all, rather than a list that has to be
 dismissed: inside a literal or at the end of one (a number is a complete value, and clients ask
-again for every digit that is typed into it, because digits are word characters), and after a lone
-`:`, which a client opens the list for as soon as it is typed. `::` still completes the scope, and
-invoking completion by hand after a colon still gives what can follow it.
+again for every digit that is typed into it, because digits are word characters), and wherever a
+trigger character has been typed with nothing after it. A client asks on the keystroke itself, and
+the character lands wherever it was typed — in a comment or a literal as much as in code — but the
+list that the character stands for only exists once it is followed by something: a lone `:` is the
+clearest case, since it is followed by a statement, a value, or a range, and which of those it is
+only becomes clear once the name that starts it is typed. A name typed after the character does
+complete, `::` still completes the scope, and invoking completion by hand still gives what can
+follow.
 
 A package name is completed wherever a `pkg::member` reference can be written, so an unimported
 package is reached by typing part of its name and then `::`, in an expression as much as in a
