@@ -491,13 +491,15 @@ std::unique_ptr<CompletionQuery> CompletionQuery::fromLocation(
                                                                 cursor, followedByColon);
     }
 
-    // The client asks the moment `:` is typed, before anything follows it. Only `::` names a scope,
-    // which the case above handles: a colon of its own is followed by a statement, a value, or a
-    // range, and which of those it is only becomes clear once the name that starts it is typed, so
-    // the scope's symbols are not a list of what belongs there.
-    if (site.tokenBefore && site.tokenBefore->kind == TokenKind::Colon && !site.targetToken &&
-        lspContext.triggerKind == lsp::CompletionTriggerKind::TriggerCharacter &&
-        lspContext.triggerCharacter == ":") {
+    // A trigger character asks for the list that its own case above produces. Where none of them
+    // matched and there is no token at the cursor, there is no list to give, and the request must
+    // not turn into lexical suggestions: clients ask on the keystroke itself, wherever it lands,
+    // including in comments and literals, which hold no token for the cursor to be in. A colon of
+    // its own is the clearest case, since it is followed by a statement, a value, or a range, and
+    // which of those it is only becomes clear once the name that starts it is typed, so the scope's
+    // symbols are not a list of what belongs there.
+    if (lspContext.triggerKind == lsp::CompletionTriggerKind::TriggerCharacter &&
+        !site.targetToken) {
         return std::make_unique<SuppressedCompletionQuery>(std::move(site.replacementRange));
     }
 

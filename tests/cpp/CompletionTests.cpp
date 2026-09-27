@@ -57,10 +57,12 @@ TEST_CASE("Unmatched completion triggers do not fall back to lexical suggestions
 
     for (const auto& trigger : completions::completionTriggerCharacters()) {
         CAPTURE(trigger);
+        // A trigger character typed inside a comment asks for a list that has nothing to do with
+        // the comment, and the request must not turn into lexical suggestions about the code
+        // around it. A deliberate request still answers there.
         for (const auto& source : {
                  "module top; // " + trigger + "\nendmodule",
                  "module top; /* " + trigger + " */ endmodule",
-                 "module top; string text = \"" + trigger + "\"; endmodule",
              }) {
             CAPTURE(source);
             auto doc = server.openFile("unmatched_trigger.sv", source);
@@ -69,6 +71,16 @@ TEST_CASE("Unmatched completion triggers do not fall back to lexical suggestions
             CHECK_FALSE(cursor.getCompletions().empty());
             doc.close();
         }
+
+        // Inside a string literal neither request is answered, because a literal is a complete
+        // value: there is no position in it that a name could be written into. See "Numbers and
+        // strings are not completion sites".
+        auto doc = server.openFile("unmatched_trigger.sv",
+                                   "module top; string text = \"" + trigger + "\"; endmodule");
+        auto cursor = doc.after(trigger);
+        CHECK(cursor.getCompletions(trigger).empty());
+        CHECK(cursor.getCompletions().empty());
+        doc.close();
     }
 }
 
