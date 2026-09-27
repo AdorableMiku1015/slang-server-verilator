@@ -1180,7 +1180,11 @@ std::vector<const slang::analysis::ValueDriver*> ShallowAnalysis::getDrivers(
         return {};
     }
 
-    return manager->getDrivers(symbol);
+    if (!m_analysisQueries) {
+        m_analysisQueries = std::make_unique<slang::analysis::AnalysisQueries>(*m_compilation,
+                                                                               *manager);
+    }
+    return m_analysisQueries->getDrivers(symbol);
 }
 
 } // namespace server
