@@ -74,6 +74,21 @@ type CompilationSource =
   | { type: 'commandBuild'; buildfile: string; args: BuildCommandArgs }
   | { type: 'topfile'; topFile: vscode.Uri }
 
+// What a compilation source compiles, ignoring the regeneration of a build file
+// that happens on every save, which is not a change of what is being compiled
+function compilationKey(source: CompilationSource): string {
+  switch (source.type) {
+    case 'none':
+      return 'none'
+    case 'filelist':
+      return `filelist:${source.buildfile}`
+    case 'commandBuild':
+      return `commandBuild:${source.buildfile}:${source.args.sourceFile}:${source.args.selectionIndex}`
+    case 'topfile':
+      return `topfile:${source.topFile.fsPath}`
+  }
+}
+
 export abstract class HierItem implements HasChildren {
   async showChildrenInWaveform(logger: Logger): Promise<void> {
     const signals = (await this.getChildren()).filter(
@@ -401,6 +416,19 @@ export class ProjectComponent
   private compilationSource: CompilationSource = { type: 'none' }
   private activeBuildWatcher: vscode.FileSystemWatcher | undefined
 
+  private _onDidChangeCompilationSource: vscode.EventEmitter<void> = new vscode.EventEmitter<void>()
+  /// Fires when the build file, build command, or top level being compiled changes
+  readonly onDidChangeCompilationSource: vscode.Event<void> =
+    this._onDidChangeCompilationSource.event
+
+  private setCompilationSource(source: CompilationSource): void {
+    const changed = compilationKey(source) !== compilationKey(this.compilationSource)
+    this.compilationSource = source
+    if (changed) {
+      this._onDidChangeCompilationSource.fire()
+    }
+  }
+
   // Getters for backward compatibility
   get buildfile(): string | undefined {
     return this.compilationSource.type === 'filelist' ||
@@ -420,17 +448,17 @@ export class ProjectComponent
   // Setters to maintain mutual exclusivity
   set buildfile(value: string | undefined) {
     if (value === undefined) {
-      this.compilationSource = { type: 'none' }
+      this.setCompilationSource({ type: 'none' })
     } else {
-      this.compilationSource = { type: 'filelist', buildfile: value }
+      this.setCompilationSource({ type: 'filelist', buildfile: value })
     }
   }
 
   set topFile(value: vscode.Uri | undefined) {
     if (value === undefined) {
-      this.compilationSource = { type: 'none' }
+      this.setCompilationSource({ type: 'none' })
     } else {
-      this.compilationSource = { type: 'topfile', topFile: value }
+      this.setCompilationSource({ type: 'topfile', topFile: value })
     }
   }
 
@@ -479,10 +507,6 @@ export class ProjectComponent
       this.topFile = uri
       await slang.setTopLevel(uri.fsPath)
       await this.refreshSlangCompilation({ preserveFocusedPath: false })
-      const editor = vscode.window.activeTextEditor
-      if (editor) {
-        await ext.lintManager.lint(editor.document)
-      }
     }
   )
 
@@ -576,7 +600,7 @@ export class ProjectComponent
       icon: '$(panel-close)',
     },
     async () => {
-      this.compilationSource = { type: 'none' }
+      this.setCompilationSource({ type: 'none' })
       this.clearBuildCommandTracking()
 
       this.unit = undefined
@@ -586,12 +610,6 @@ export class ProjectComponent
 
       this._onDidChangeTreeData.fire()
       await slang.setBuildFile('')
-
-      ext.lintManager.verilator.clearAll()
-      const editor = vscode.window.activeTextEditor
-      if (editor) {
-        await ext.lintManager.lint(editor.document)
-      }
     }
   )
 
@@ -1527,7 +1545,7 @@ export class ProjectComponent
       return false
     }
 
-    this.compilationSource = { type: 'commandBuild', buildfile, args }
+    this.setCompilationSource({ type: 'commandBuild', buildfile, args })
     await slang.setBuildFile(buildfile)
     this.trackBuildCommand(args)
     return true
@@ -1562,7 +1580,7 @@ export class ProjectComponent
         return
       }
 
-      this.compilationSource = { type: 'commandBuild', buildfile, args }
+      this.setCompilationSource({ type: 'commandBuild', buildfile, args })
       await slang.setBuildFile(buildfile)
       await this.refreshSlangCompilation({ revealSelection: false })
     }

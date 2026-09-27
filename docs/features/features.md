@@ -8,6 +8,22 @@ When a [design is set](hdl/hdl.md), the shallow compilation provides diagnostics
 ![goto-refs](/assets/images/lints.gif)
 
 
+### External Linting
+
+Besides what slang itself reports, an external linter can be run over the files. Verilator is
+supported, off by default: set `slang.lint.verilator.enabled`, and `slang.lint.verilator.path` if
+`verilator` is not on the `PATH`. Extra command line options go in `slang.lint.verilator.args`,
+where each entry may hold several arguments and may quote them (`["--top-module top", "-Wall"]`).
+Set `slang.lint.enabled` to `false` to keep only the external linter's diagnostics.
+
+It lints the [top level](hdl/hdl.md) when one is set, and the file you are editing when none is,
+running on save, when you switch to another file while no top level is set, and when the top level
+or the build being compiled changes. The tool is handed a path, so it reads what is on disk: a
+buffer with unsaved edits is linted in the state it was last saved in. Diagnostics land on every
+file the tool reports on, including headers pulled in by the file that was linted, and the ones for
+a file that no longer has anything to report are dropped with the run that finds that out.
+
+
 ### Hovers and Go-to Definition
 
 Hovers are provided on each symbol with the following info if applicable:

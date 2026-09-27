@@ -35,6 +35,14 @@ export function isSystemVerilog(langid: string): boolean {
 }
 
 /**
+ * Whether a file is SystemVerilog, by extension rather than by language id, for the
+ * external tools that are handed a path and never see an open document
+ */
+export function isSystemVerilogPath(filePath: string): boolean {
+  return /\.(sv|svh)$/i.test(filePath)
+}
+
+/**
  * Get the basename of a path without extension
  * @param filePath - Path string to extract basename from
  * @returns The basename without extension, or undefined if not found

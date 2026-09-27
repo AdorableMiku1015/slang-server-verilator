@@ -18,7 +18,6 @@ import {
   CommandNode,
   ConfigObject,
   EditorButton,
-  ExtensionComponent,
   ViewContainerSpec,
 } from './lib/libconfig'
 import { PathConfigObject } from './lib/pathConfig'
@@ -37,13 +36,6 @@ import { InactiveRegionsFeature } from './lib/inactiveRegions'
 import { LintManager } from './linter/LintManager'
 
 export var ext: SlangExtension
-
-class LintComponent extends ExtensionComponent {
-  enabled: ConfigObject<boolean> = new ConfigObject({
-    default: true,
-    description: 'Enable diagnostics from the slang language server',
-  })
-}
 
 interface QuickPickItem extends vscode.QuickPickItem {
   value: unknown
@@ -113,8 +105,8 @@ File input is sent to stdin, and formatted output is read from stdout.',
   // Inactive preprocessor region highlighting
   inactiveRegions: InactiveRegionsFeature = new InactiveRegionsFeature()
 
-  // External linters (e.g. verilator)
-  lintManager: LintManager = new LintManager()
+  // Linting: the language server's own diagnostics, and the external linters
+  lint: LintManager = new LintManager()
 
   // Side bar
   project: ProjectComponent = new ProjectComponent()
@@ -224,8 +216,6 @@ File input is sent to stdin, and formatted output is read from stdout.',
     default: [],
     description: 'Arguments to pass to slang-server when debugging',
   })
-
-  lint: LintComponent = new LintComponent()
 
   /// The final config from slang-server json files
   slangConfig: slang.Config = {}
@@ -492,13 +482,15 @@ File input is sent to stdin, and formatted output is read from stdout.',
     )
     await this.setupLanguageClient()
 
-    // Clear slang diagnostics when lint is disabled
+    // Lint the compilation the user selects, as soon as they select it
+    this.lint.watchCompilationSource(this.project)
+
+    // Diagnostics the server already sent stay in the editor when lint is turned off,
+    // so drop them here rather than waiting for the next request
     context.subscriptions.push(
-      vscode.workspace.onDidChangeConfiguration((e) => {
-        if (e.affectsConfiguration('slang.lint.enabled')) {
-          if (!this.lint.enabled.getValue() && this.client) {
-            this.client.diagnostics?.clear()
-          }
+      this.onConfigUpdated(() => {
+        if (!this.lint.enabled.getValue()) {
+          this.client?.diagnostics?.clear()
         }
       })
     )

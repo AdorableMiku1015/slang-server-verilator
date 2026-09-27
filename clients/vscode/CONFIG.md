@@ -20,6 +20,28 @@
 
   Background color for inactive regions (used only when style is "background").
 
+- `slang.lint.enabled`: boolean = true
+
+  Enable diagnostics from the slang language server
+
+- `slang.lint.verilator.enabled`: boolean = false
+
+  Enable verilator lint
+
+- `slang.lint.verilator.path`: path
+
+  Platform Defaults:
+
+    linux:   `verilator`
+
+    mac:     `verilator`
+
+    windows: `verilator`
+
+- `slang.lint.verilator.args`: array = []
+
+  Additional arguments to pass to verilator
+
 - `slang.path`: path
 
   Platform Defaults:
