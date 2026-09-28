@@ -1160,6 +1160,75 @@ endmodule
     checkOrdered(hoverContentAt(doc, "D = 16"), "Shared parameter docs.", "depth");
 }
 
+TEST_CASE("HoverTrailingCommentBeforeDirective") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(
+module top;
+    logic a; // a note
+`ifdef FOO
+    logic b;
+`endif
+endmodule
+)");
+
+    // The comment of a line that a directive follows sits in the trivia of the directive's own
+    // token.
+    checkOrdered(hoverContentAt(doc, "a;"), "a note", "logic a;");
+}
+
+TEST_CASE("HoverIgnoresCommentsOnDirectiveLines") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(
+module top;
+    logic a;
+`define Z 1 // width in bits
+    logic b;
+endmodule
+)");
+
+    // The define's comment belongs to the define's line, not to the declaration above it.
+    CHECK(hoverContentAt(doc, "a;").find("width in bits") == std::string::npos);
+}
+
+TEST_CASE("HoverTrailingCommentOnFirstDeclarationInFile") {
+    ServerHarness server;
+
+    auto doc = server.openFile("top.sv", "typedef logic [7:0] byte_t; // top note\n"
+                                         "logic x; // x note\n");
+
+    // The declaration holding the file's first token is not inside a wrapper, and its trailing
+    // comment still has to be found.
+    checkOrdered(hoverContentAt(doc, "byte_t;"), "top note", "typedef logic [7:0] byte_t;");
+}
+
+TEST_CASE("HoverTrailingCommentOnModuleHeaderLine") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(
+module top; // the top module
+endmodule
+)");
+
+    // The hover renders the module header, so the comment that belongs to it is the one at the
+    // end of the header's line.
+    checkOrdered(hoverContentAt(doc, "top;"), "the top module", "module top;");
+}
+
+TEST_CASE("HoverTrailingCommentOnMacroGeneratedDeclaration") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(
+`define DECL(name) logic name;
+module top;
+    `DECL(mac); // mac note
+endmodule
+)");
+
+    checkOrdered(hoverContentAt(doc, "mac);"), "mac note", "logic mac;");
+}
+
 TEST_CASE("HoverDriverSectionKeepsVerbatimSyntax") {
     ServerHarness server;
 
@@ -1494,4 +1563,3 @@ endmodule
     recordNoSystemHover("queue selector $", "$] ==");
     recordNoSystemHover("$root", "$root", false);
 }
-

@@ -375,8 +375,12 @@ size_t countNewlines(const parsing::Token& token) {
 const syntax::SyntaxNode& getDeclarationElement(const syntax::SyntaxNode& node) {
     const syntax::SyntaxNode* current = &node;
     const auto start = node.getFirstToken().location();
-    while (current->parent && current->parent->getFirstToken().location() == start)
+    // The file root is not a declaration element: stopping there would leave the node with
+    // nothing to walk past, since a root has no parent and no siblings.
+    while (current->parent && current->parent->parent &&
+           current->parent->getFirstToken().location() == start) {
         current = current->parent;
+    }
 
     return *current;
 }
@@ -417,6 +421,24 @@ void forEachFollowingToken(const syntax::SyntaxNode& node, CallbackT&& callback)
     }
 }
 
+/// Appends the comments in `trivia` that sit on the line it starts on, ie. those before the
+/// line ends.
+void appendLineComments(fmt::memory_buffer& out, const parsing::TriviaView& trivia,
+                        Config::HoverConfig::DocCommentFormat format) {
+    for (const auto& item : trivia) {
+        if (item.kind == parsing::TriviaKind::Whitespace)
+            continue;
+
+        if (item.kind != parsing::TriviaKind::LineComment &&
+            item.kind != parsing::TriviaKind::BlockComment) {
+            // EndOfLine, a nested directive, disabled text, ...: the line has ended.
+            return;
+        }
+
+        appendComment(out, item, format);
+    }
+}
+
 /// Appends the comment left at the end of the line containing `node`. Slang attaches a comment
 /// to the token that follows it, so the trivia after the declaration's own tokens is scanned:
 /// the declaration can be wrapped in a statement, or followed by a list separator, with the
@@ -424,12 +446,24 @@ void forEachFollowingToken(const syntax::SyntaxNode& node, CallbackT&& callback)
 void appendTrailingComment(fmt::memory_buffer& out, const syntax::SyntaxNode& node,
                            Config::HoverConfig::DocCommentFormat format) {
     forEachFollowingToken(node, [&](const parsing::Token& token) {
-        for (const auto& trivia : token.trivia()) {
-            // The declaration's line ends here.
-            if (trivia.kind == parsing::TriviaKind::EndOfLine)
-                return false;
-
-            appendComment(out, trivia, format);
+        for (const auto& item : token.trivia()) {
+            switch (item.kind) {
+                case parsing::TriviaKind::Whitespace:
+                    continue;
+                case parsing::TriviaKind::LineComment:
+                case parsing::TriviaKind::BlockComment:
+                    appendComment(out, item, format);
+                    continue;
+                case parsing::TriviaKind::Directive:
+                    // A directive covers whole lines of its own, so the comment left at the end
+                    // of the line before it hangs off the directive's own first token.
+                    if (const auto* directive = item.syntax())
+                        appendLineComments(out, directive->getFirstToken().trivia(), format);
+                    return false;
+                default:
+                    // EndOfLine, disabled text, ...: the declaration's line ends here.
+                    return false;
+            }
         }
         return true;
     });
@@ -484,9 +518,8 @@ std::string getDocCommentForHover(const syntax::SyntaxNode& node,
     SLANG_ASSERT(format != Config::HoverConfig::DocCommentFormat::raw);
 
     fmt::memory_buffer out;
-    const auto& element = getDeclarationElement(node);
 
-    if (auto block = findCommentBlock(element)) {
+    if (auto block = findCommentBlock(getDeclarationElement(node))) {
         auto triviaSpan = block->node->getFirstToken().trivia();
         for (auto it = triviaSpan.begin() + static_cast<std::ptrdiff_t>(block->triviaIndex);
              it != triviaSpan.end(); ++it) {
@@ -494,7 +527,9 @@ std::string getDocCommentForHover(const syntax::SyntaxNode& node,
         }
     }
 
-    appendTrailingComment(out, element, format);
+    // The trailing comment belongs to the line where the rendered syntax ends, which for a
+    // wrapped declaration is the line the declaration itself is on.
+    appendTrailingComment(out, node, format);
 
     return fmt::to_string(out);
 }
