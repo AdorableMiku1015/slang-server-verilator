@@ -46,37 +46,57 @@ hover 的注释段按顺序由两部分拼成**一段**（沿用现有的逐行�
 
 ### S2.2 行尾注释的取法
 
-「本行行尾注释 = 本声明之后紧跟的那个 token 的 leading trivia 中，**第一个换行之前**的注释 trivia」。
+「声明的行尾注释 = 声明自己的 token 之后、到本行换行为止」这段 trivia 里的注释。
 
-- 找后继 token：从节点向上找第一个「自己不是父节点最后一个孩子」的祖先，在该父节点的孩子里向后找第一个 token 或第一个语法节点（取它的首 token）。语法树里 token 孩子与节点孩子共用一个索引空间，`childNode(i)` 为 null 时该槽位是 token，`childToken(i)` 的 kind 为 `Unknown` 时该槽位是节点。
-- 抽取注释：从 trivia 头开始，遇到 `EndOfLine` 停止；途中的 `LineComment` / `BlockComment` 都算行尾注释。多行 `/* */` 只要求它**起始于**本行即可。
-- 因为不涉及源码文本扫描，宏展开出来的声明同样适用；`line comment` 里的 `//` 也不会被字符串字面量干扰——两个 token 之间的 trivia 按定义就是空白与注释。
+从 `node` 的 token 之后按源码顺序遍历后续 token，逐个检查它的 leading trivia：
+
+- trivia 里出现 `EndOfLine` → 本行结束，停止（最常见的情形就是这样：下一条声明在下一行，其 trivia 的第一个元素就是换行）。
+- 否则收下其中的 `LineComment` / `BlockComment`，继续看下一个 token。
+
+之所以要「继续看下一个 token」而不是只看紧跟的那一个，是因为注释前面可能还隔着别的东西：
+
+- 模块体里的 `localparam` / `parameter` 在 slang 里被包成 `ParameterDeclarationStatement`，hover 渲染的是里面的 `ParameterDeclaration`，`;` 落在包装节点上；
+- 端口声明后面跟着列表分隔符 `,`。
+
+两者都实测过：只看紧邻 token 时这两种形状取不到行尾注释。多行 `/* */` 只要求它**起始于**本行，起始行之后的续行照常渲染。
+
+全程不扫描源码文本——两个 token 之间的 trivia 按定义只有空白与注释，所以字符串字面量里的 `//` 不会被当成注释（有回归测试固定这一点）。
 
 ### S2.3 组头注释的继承
 
 「组头注释 = 连续一组同级成员声明**最上方**那个独占一行的注释块」，因此第二条及之后的声明也能看到它。
 
-从声明节点 `D` 出发向上走：
+从 `getDeclarationElement(node)` 出发向上走——即先取「首个 token 与该节点相同的、最外层的祖先」。这样模块体里的 `localparam` 会先归位到 `ParameterDeclarationStatement`，它才是真正排在模块成员列表里的那一项，组头继承因此对参数声明同样生效。随后：
 
-1. `D` 自己有上方注释块 → 用它，结束。
+1. 该元素自己有上方注释块 → 用它，结束。
 2. 否则取「同一父节点下、紧邻的上一个成员声明」 `P`：
    - `P` 不存在 → 没有组头注释。
-   - `P` 与 `D` 之间有空行或不在相邻两行（即 `D` 首 token 的 leading trivia 里 `EndOfLine` 数量不为 1）→ 没有组头注释（空行切断分组）。
+   - `P` 与当前节点之间有空行或不在相邻两行（即当前节点首 token 的 leading trivia 里 `EndOfLine` 数量不为 1）→ 没有组头注释（空行切断分组）。
    - `P` 的 kind 不是 `syntax::MemberSyntax`（例如模块头的 `ModuleHeader`、列表里的分隔 token）→ 没有组头注释。
    - `P` 自己有上方注释块 → 它就是组头注释，结束。
-   - 否则令 `D = P` 继续向上。
+   - 否则令当前节点 = `P` 继续向上。
 
-约束到成员声明（`MemberSyntax`）是为了不越出声明组：模块体第一个成员的「上一个同级」是模块头，若不加这条判断，文件顶部的版权注释会在第一个成员上被当成组头注释；同理也不会跨进过程块里的语句、端口列表里的端口。
+约束到成员声明（`MemberSyntax`）是为了不越出声明组：模块体第一个成员的「上一个同级」是模块头，若不加这条判断，文件顶部的版权注释会在第一个成员上被当成组头注释；同理也不会跨进过程块里的语句。
 
-**已知取舍**：语法上「独占注释 + 一组声明」与「只给第一条声明写的文档注释」不可区分，因此本规则会把上方注释块共享给整组。于是
+**已知取舍**：语法上「独占注释 + 一组声明」与「只给第一条声明写的文档注释」不可区分，因此本规则会把上方注释块共享给整组（用户已确认选择不带闸的继承）。仓库自带测试数据里两种情况都能看到，golden 的差异就是实证：
 
 ```systemverilog
-/// 数据总线位宽
-logic [7:0] width;
-logic [7:0] depth;   // hover depth 会显示「数据总线位宽」
+// tests/data/repo1/cycle_test.sv —— 目标用法
+// Use types from base_pkg (which exports util_pkg types)
+base_pkg::config_t system_config;
+base_pkg::result_t operation_result;  // This should resolve via export
+base_pkg::data_width_t bus_width;
 ```
+`operation_result`、`bus_width` 的 hover 现在都会带出组头注释，`operation_result` 另外带出自己的行尾注释。
 
-属于预期行为（用户已确认选择不带闸的继承）。想让注释只属于第一条声明，就在它与下一条之间留一个空行。
+```systemverilog
+// tests/data/hdl_test.sv:91 —— 不带闸的代价
+    input logic rst,
+    // some useful info
+    input logic          [test_pkg::WIDTH-1:0] width_port,
+    input test_pkg::id_t [test_pkg::WIDTH-1:0] id_array,
+```
+这条注释原本像是只写给 `width_port`，现在同组的后续端口 hover 也会带上它。想让注释只属于单条声明，就在它与下一条之间留一个空行。
 
 ### S2.4 渲染
 
@@ -92,7 +112,9 @@ logic [7:0] depth;   // hover depth 会显示「数据总线位宽」
 
 - `raw` 模式下的行尾注释与组头注释（见 S2.5）。
 - 其他特性（completion、code lens、文档符号等）的注释展示——它们不走 `getDocCommentForHover`。
-- 端口列表、过程块语句、结构体/枚举成员的组头继承（S2.3 已限制在成员声明）。
+- 过程块语句、结构体/枚举成员的组头继承（S2.3 已限制在成员声明；端口声明与 `ParameterDeclarationStatement` 本身是成员，参数与端口都在覆盖范围内）。
+- **宏展开出来的声明**：这类声明的语法树在展开缓冲区里，其根节点没有更上层的父节点，因此取不到使用处那一行的行尾注释。实测 `` `DECL(mac); // note `` hover 时不会带出 `note`，行尾注释只在使用处所在的那一行之外无从归属。
+- **hover 的 `Driven by` 段（驱动语句）**：`DefinitionInfo.cpp` 走 `renderCode(paragraph, sm, /*rawDocComments=*/true)`，把驱动语句连同 leading 注释原样渲染进代码块，不经过注释段逻辑，所以驱动语句的行尾注释不显示（保持现状）。
 - 通过配置开关关闭新行为。
 
 ## Tasks

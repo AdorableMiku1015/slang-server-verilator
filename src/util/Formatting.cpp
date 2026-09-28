@@ -253,111 +253,248 @@ inline void rtrim(std::string& s) {
             s.end());
 }
 
+namespace {
+
+/// Where a comment block starts within a node's leading trivia. A comment can come from an
+/// earlier declaration in the same group, so the node that owns the trivia is tracked too.
+struct CommentBlock {
+    const syntax::SyntaxNode* node;
+    size_t triviaIndex;
+};
+
+/// Appends a single line of comment text with the comment markers stripped. In plaintext mode
+/// markdown characters are escaped so the text renders as-is.
+void appendCommentLine(fmt::memory_buffer& out, std::string_view line, parsing::TriviaKind kind,
+                       Config::HoverConfig::DocCommentFormat format) {
+#ifdef _WIN32
+    if (!line.empty() && line.back() == '\r')
+        line.remove_suffix(1);
+#endif
+
+    // Trim leading whitespace and newlines
+    ltrim(line);
+
+    if (kind == parsing::TriviaKind::LineComment) {
+        // Single-line doc comment
+        if (line.starts_with("///"))
+            line.remove_prefix(3);
+        else if (line.starts_with("//"))
+            line.remove_prefix(2);
+    }
+
+    else { // if (kind == parsing::TriviaKind::BlockComment)
+        // Check for leading '*'; ie:
+        /*
+         * <- Leading star
+         */
+        if (!line.empty() && line.front() == '*')
+            line.remove_prefix(1);
+
+        // Everything else if ignored, including single line comments. Single
+        // line comments are displayed as is in the doc comment.
+    }
+
+    ltrim(line);
+
+    const bool hasText = !line.empty();
+
+    if (format == Config::HoverConfig::DocCommentFormat::plaintext) {
+        const std::string escaped = markup::escapeMarkdownLine(line);
+        fmt::format_to(fmt::appender(out), "{}", escaped);
+    }
+    else {
+        fmt::format_to(fmt::appender(out), "{}", line);
+    }
+
+    // Force markdown to respect newlines by replacing `\n` with `  \n`
+    if (hasText) {
+        fmt::format_to(fmt::appender(out), "  \n");
+    }
+    else {
+        fmt::format_to(fmt::appender(out), "\n");
+    }
+}
+
+/// Appends a comment trivia, which spans multiple lines for block comments.
+void appendComment(fmt::memory_buffer& out, const parsing::Trivia& trivia,
+                   Config::HoverConfig::DocCommentFormat format) {
+    if (trivia.kind == parsing::TriviaKind::LineComment) {
+        appendCommentLine(out, trivia.getRawText(), trivia.kind, format);
+        return;
+    }
+
+    if (trivia.kind != parsing::TriviaKind::BlockComment)
+        return;
+
+    std::string_view text = trivia.getRawText();
+
+    if (text.starts_with("/*")) {
+        text.remove_prefix(2);
+
+        if (text.starts_with("*")) {
+            // Handle /** doc comments
+            text.remove_prefix(1);
+        }
+    }
+
+    if (text.ends_with("*/")) {
+        text.remove_suffix(2);
+
+        if (text.ends_with("*")) {
+            // Handle **/ doc comments
+            text.remove_suffix(1);
+        }
+    }
+
+    std::size_t pos = 0;
+    while (pos <= text.size()) {
+        std::size_t end = text.find('\n', pos);
+        if (end == std::string_view::npos)
+            end = text.size();
+
+        std::string_view line = text.substr(pos, end - pos);
+        appendCommentLine(out, line, trivia.kind, format);
+
+        pos = end + 1;
+    }
+}
+
+/// How many lines of trivia separate a token from whatever came before it.
+size_t countNewlines(const parsing::Token& token) {
+    size_t count = 0;
+    for (const auto& trivia : token.trivia()) {
+        if (trivia.kind == parsing::TriviaKind::EndOfLine)
+            count++;
+    }
+    return count;
+}
+
+/// The outermost node starting at the same token as `node`. A declaration can be wrapped in a
+/// statement that the hover renders separately, and it is the enclosing statement that sits in
+/// the surrounding list of declarations.
+const syntax::SyntaxNode& getDeclarationElement(const syntax::SyntaxNode& node) {
+    const syntax::SyntaxNode* current = &node;
+    const auto start = node.getFirstToken().location();
+    while (current->parent && current->parent->getFirstToken().location() == start)
+        current = current->parent;
+
+    return *current;
+}
+
+/// Calls `callback` for each token following `node` in source order, stopping as soon as it
+/// returns false.
+template<typename CallbackT>
+void forEachFollowingToken(const syntax::SyntaxNode& node, CallbackT&& callback) {
+    const syntax::SyntaxNode* current = &node;
+    while (current->parent) {
+        const syntax::SyntaxNode* parent = current->parent;
+        size_t childIndex = parent->getChildCount();
+        for (size_t i = 0; i < parent->getChildCount(); i++) {
+            if (parent->childNode(i) == current) {
+                childIndex = i;
+                break;
+            }
+        }
+        if (childIndex == parent->getChildCount())
+            return;
+
+        // Siblings and tokens share one index space, so scan forward for whichever child comes
+        // next.
+        for (size_t i = childIndex + 1; i < parent->getChildCount(); i++) {
+            if (const auto* child = parent->childNode(i)) {
+                for (auto it = child->tokens_begin(); it != child->tokens_end(); ++it) {
+                    if (!callback(*it))
+                        return;
+                }
+            }
+            else if (auto token = parent->childToken(i);
+                     token.kind != parsing::TokenKind::Unknown) {
+                if (!callback(token))
+                    return;
+            }
+        }
+        current = parent;
+    }
+}
+
+/// Appends the comment left at the end of the line containing `node`. Slang attaches a comment
+/// to the token that follows it, so the trivia after the declaration's own tokens is scanned:
+/// the declaration can be wrapped in a statement, or followed by a list separator, with the
+/// comment coming after that.
+void appendTrailingComment(fmt::memory_buffer& out, const syntax::SyntaxNode& node,
+                           Config::HoverConfig::DocCommentFormat format) {
+    forEachFollowingToken(node, [&](const parsing::Token& token) {
+        for (const auto& trivia : token.trivia()) {
+            // The declaration's line ends here.
+            if (trivia.kind == parsing::TriviaKind::EndOfLine)
+                return false;
+
+            appendComment(out, trivia, format);
+        }
+        return true;
+    });
+}
+
+/// The member declaration directly preceding `node` in the same list, if any.
+const syntax::SyntaxNode* getPreviousMember(const syntax::SyntaxNode& node) {
+    const syntax::SyntaxNode* parent = node.parent;
+    if (!parent)
+        return nullptr;
+
+    for (size_t i = 0; i < parent->getChildCount(); i++) {
+        if (parent->childNode(i) != &node)
+            continue;
+
+        for (size_t j = i; j > 0; j--) {
+            const auto* previous = parent->childNode(j - 1);
+            if (previous)
+                return syntax::MemberSyntax::isKind(previous->kind) ? previous : nullptr;
+        }
+        return nullptr;
+    }
+    return nullptr;
+}
+
+/// The comment block documenting `node`: its own leading block, or the one heading the group
+/// of declarations it belongs to. A standalone comment sits above a contiguous run of member
+/// declarations, so it reads as documenting the whole run rather than only the declaration it
+/// is attached to.
+std::optional<CommentBlock> findCommentBlock(const syntax::SyntaxNode& node) {
+    const syntax::SyntaxNode* current = &node;
+    while (true) {
+        if (auto start = findLeadingDocCommentStart(*current))
+            return CommentBlock{.node = current, .triviaIndex = *start};
+
+        const auto* previous = getPreviousMember(*current);
+        if (!previous)
+            return std::nullopt;
+
+        // The run only continues across adjoining lines; a blank line ends it.
+        if (countNewlines(current->getFirstToken()) != 1)
+            return std::nullopt;
+
+        current = previous;
+    }
+}
+
+} // namespace
+
 std::string getDocCommentForHover(const syntax::SyntaxNode& node,
                                   const Config::HoverConfig::DocCommentFormat format) {
     SLANG_ASSERT(format != Config::HoverConfig::DocCommentFormat::raw);
 
-    auto triviaSpan = node.getFirstToken().trivia();
-    auto start = findLeadingDocCommentStart(node);
-    if (!start)
-        return {};
-
     fmt::memory_buffer out;
+    const auto& element = getDeclarationElement(node);
 
-    auto appendLine = [&](std::string_view line, parsing::TriviaKind kind) {
-#ifdef _WIN32
-        if (!line.empty() && line.back() == '\r')
-            line.remove_suffix(1);
-#endif
-
-        // Trim leading whitespace and newlines
-        ltrim(line);
-
-        if (kind == parsing::TriviaKind::LineComment) {
-            // Single-line doc comment
-            if (line.starts_with("///"))
-                line.remove_prefix(3);
-            else if (line.starts_with("//"))
-                line.remove_prefix(2);
-        }
-
-        else { // if (kind == parsing::TriviaKind::BlockComment)
-            // Check for leading '*'; ie:
-            /*
-             * <- Leading star
-             */
-            if (!line.empty() && line.front() == '*')
-                line.remove_prefix(1);
-
-            // Everything else if ignored, including single line comments. Single
-            // line comments are displayed as is in the doc comment.
-        }
-
-        ltrim(line);
-
-        const bool hasText = !line.empty();
-
-        if (format == Config::HoverConfig::DocCommentFormat::plaintext) {
-            const std::string escaped = markup::escapeMarkdownLine(line);
-            fmt::format_to(fmt::appender(out), "{}", escaped);
-        }
-        else {
-            fmt::format_to(fmt::appender(out), "{}", line);
-        }
-
-        // Force markdown to respect newlines by replacing `\n` with `  \n`
-        if (hasText) {
-            fmt::format_to(fmt::appender(out), "  \n");
-        }
-        else {
-            fmt::format_to(fmt::appender(out), "\n");
-        }
-    };
-
-    for (auto it = triviaSpan.begin() + static_cast<std::ptrdiff_t>(*start); it != triviaSpan.end();
-         ++it) {
-        const auto& t = *it;
-
-        if (t.kind == parsing::TriviaKind::LineComment) {
-            std::string_view line = t.getRawText();
-            appendLine(line, t.kind);
-        }
-
-        else if (t.kind == parsing::TriviaKind::BlockComment) {
-
-            std::string_view text = t.getRawText();
-
-            if (text.starts_with("/*")) {
-                text.remove_prefix(2);
-
-                if (text.starts_with("*")) {
-                    // Handle /** doc comments
-                    text.remove_prefix(1);
-                }
-            }
-
-            if (text.ends_with("*/")) {
-                text.remove_suffix(2);
-
-                if (text.ends_with("*")) {
-                    // Handle **/ doc comments
-                    text.remove_suffix(1);
-                }
-            }
-
-            std::size_t pos = 0;
-            while (pos <= text.size()) {
-                std::size_t end = text.find('\n', pos);
-                if (end == std::string_view::npos)
-                    end = text.size();
-
-                std::string_view line = text.substr(pos, end - pos);
-                appendLine(line, t.kind);
-
-                pos = end + 1;
-            }
+    if (auto block = findCommentBlock(element)) {
+        auto triviaSpan = block->node->getFirstToken().trivia();
+        for (auto it = triviaSpan.begin() + static_cast<std::ptrdiff_t>(block->triviaIndex);
+             it != triviaSpan.end(); ++it) {
+            appendComment(out, *it, format);
         }
     }
+
+    appendTrailingComment(out, element, format);
 
     return fmt::to_string(out);
 }

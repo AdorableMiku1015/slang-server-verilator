@@ -931,6 +931,252 @@ endmodule
     CHECK(content.value.find("/// another line") != std::string::npos);
 }
 
+static std::string hoverContentAt(DocumentHandle& doc, const std::string& before) {
+    auto hover = doc.getHoverAt(doc.before(before).m_offset);
+    if (!hover) {
+        FAIL("No hover at \"" << before << "\"");
+        return {};
+    }
+
+    auto content = rfl::get<lsp::MarkupContent>(hover->contents).value;
+    CAPTURE(content);
+    return content;
+}
+
+/// Checks that both strings show up in the hover, the second one after the first.
+static void checkOrdered(const std::string& content, const std::string& first,
+                         const std::string& second) {
+    auto firstPos = content.find(first);
+    auto secondPos = content.find(second, firstPos);
+    CHECK(firstPos != std::string::npos);
+    CHECK(secondPos != std::string::npos);
+}
+
+TEST_CASE("HoverCombinesLeadingAndTrailingComments") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(
+module top;
+    /// Doc for a.
+    logic a; // trailing a
+endmodule
+)");
+
+    auto content = hoverContentAt(doc, "a; // trailing a");
+    checkOrdered(content, "Doc for a.", "trailing a");
+    checkOrdered(content, "trailing a", "logic a;");
+}
+
+TEST_CASE("HoverTrailingCommentWithoutLeadingComment") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(
+module top;
+    logic b; // trailing b only
+endmodule
+)");
+
+    auto content = hoverContentAt(doc, "b; // trailing b only");
+    checkOrdered(content, "trailing b only", "logic b;");
+}
+
+TEST_CASE("HoverCombinesBlockComments") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(
+module top;
+    /** Block doc for c. */
+    logic c; /* trailing c */
+endmodule
+)");
+
+    auto content = hoverContentAt(doc, "c; /* trailing c");
+    checkOrdered(content, "Block doc for c.", "trailing c");
+    checkOrdered(content, "trailing c", "logic c;");
+}
+
+TEST_CASE("HoverTrailingCommentIgnoresCommentMarkersInStringLiterals") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(
+module top;
+    /// Doc for u.
+    localparam string u = "a//ZZZ"; // real note
+endmodule
+)");
+
+    auto content = hoverContentAt(doc, "u =");
+    auto docPos = content.find("Doc for u.");
+    auto codePos = content.find("systemverilog");
+    REQUIRE(docPos != std::string::npos);
+    REQUIRE(codePos > docPos);
+
+    // Everything between the doc comment and the code block is the comment section: it holds
+    // the trailing comment, and nothing from inside the string literal.
+    auto comments = content.substr(docPos, codePos - docPos);
+    CHECK(comments.find("real note") != std::string::npos);
+    CHECK(comments.find("ZZZ") == std::string::npos);
+}
+
+TEST_CASE("HoverDoesNotTakeTheNextDeclarationsComments") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(
+module top;
+    logic a;
+    /// Doc for b.
+    logic b; // trailing b
+endmodule
+)");
+
+    auto content = hoverContentAt(doc, "a;\n");
+    CHECK(content.find("Doc for b.") == std::string::npos);
+    CHECK(content.find("trailing b") == std::string::npos);
+}
+
+TEST_CASE("HoverSharedGroupDocComment") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(
+module top;
+    /// Bus signals shared by the datapath.
+    logic req; // request
+    logic ack; // acknowledge
+    wire [7:0] data; // payload
+
+    logic lonely; // no header
+endmodule
+)");
+
+    for (const auto& [needle, note] :
+         {std::pair{"req; // request", "request"}, std::pair{"ack; // acknowledge", "acknowledge"},
+          std::pair{"data; // payload", "payload"}}) {
+        CAPTURE(needle);
+        auto content = hoverContentAt(doc, needle);
+        checkOrdered(content, "Bus signals shared by the datapath.", note);
+    }
+
+    // A blank line ends the run, so its header does not reach the declaration below.
+    auto lonely = hoverContentAt(doc, "lonely; // no header");
+    CHECK(lonely.find("Bus signals shared by the datapath.") == std::string::npos);
+    CHECK(lonely.find("no header") != std::string::npos);
+}
+
+TEST_CASE("HoverSharedGroupDocCommentStopsAtModuleHeader") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(
+// Copyright 2024 Example Corp
+module top;
+    logic first; // note first
+    logic second; // note second
+endmodule
+)");
+
+    auto first = hoverContentAt(doc, "first; // note first");
+    CHECK(first.find("Copyright") == std::string::npos);
+    CHECK(first.find("note first") != std::string::npos);
+
+    auto second = hoverContentAt(doc, "second; // note second");
+    CHECK(second.find("Copyright") == std::string::npos);
+    CHECK(second.find("note second") != std::string::npos);
+}
+
+TEST_CASE("HoverPlaintextEscapesTrailingComment") {
+    ServerHarness server;
+
+    Config config;
+    config.hovers.value().docCommentFormat = Config::HoverConfig::DocCommentFormat::plaintext;
+    server.loadConfig(config);
+
+    auto doc = server.openFile("test.sv", R"(
+module top;
+    /// *bold* doc
+    logic a; // _italic_ note
+endmodule
+)");
+
+    auto content = hoverContentAt(doc, "a; // _italic_ note");
+    CHECK(content.find("\\*bold\\* doc") != std::string::npos);
+    CHECK(content.find("\\_italic\\_ note") != std::string::npos);
+}
+
+TEST_CASE("HoverRawCommentsIgnoreTrailingComment") {
+    ServerHarness server;
+
+    Config config;
+    config.hovers.value().docCommentFormat = Config::HoverConfig::DocCommentFormat::raw;
+    server.loadConfig(config);
+
+    auto doc = server.openFile("test.sv", R"(
+module top;
+    /// raw doc
+    logic a; // raw note
+endmodule
+)");
+
+    auto content = hoverContentAt(doc, "a; // raw note");
+    CHECK(content.find("/// raw doc") != std::string::npos);
+    CHECK(content.find("raw note") == std::string::npos);
+}
+
+TEST_CASE("HoverCombinedCommentsAtUsageSite") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(
+module top;
+    /// Reset, active low.
+    logic rst_n; // driven by the pad cell
+    logic out;
+    always_comb out = rst_n;
+endmodule
+)");
+
+    auto content = hoverContentAt(doc, "rst_n;\nendmodule");
+    checkOrdered(content, "Reset, active low.", "driven by the pad cell");
+}
+
+TEST_CASE("HoverCombinesCommentsOnWrappedDeclarations") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(
+module top (
+    input  logic clk,   // 50MHz reference
+    output logic rst_n  // active low
+);
+    /// Shared parameter docs.
+    localparam int W = 8;  // width
+    localparam int D = 16; // depth
+endmodule
+)");
+
+    // A port's comment comes after the list separator that ends the port declaration.
+    CHECK(hoverContentAt(doc, "clk,").find("50MHz reference") != std::string::npos);
+    CHECK(hoverContentAt(doc, "rst_n  //").find("active low") != std::string::npos);
+
+    // Module body parameters are wrapped in a statement, so the trailing comment and the
+    // shared group header both have to look past that wrapper.
+    checkOrdered(hoverContentAt(doc, "W = 8"), "Shared parameter docs.", "width");
+    checkOrdered(hoverContentAt(doc, "D = 16"), "Shared parameter docs.", "depth");
+}
+
+TEST_CASE("HoverDriverSectionKeepsVerbatimSyntax") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(
+module top;
+    logic out;
+    always_comb out = 1'b0; // default when idle
+endmodule
+)");
+
+    // The "Driven by" section renders the driver's syntax verbatim, leading comments included
+    // and trailing comments left alone, so it is unaffected by the doc comment handling.
+    auto content = hoverContentAt(doc, "out = 1'b0");
+    checkOrdered(content, "Driven by always_comb", "always_comb out = 1'b0;");
+    CHECK(content.find("default when idle") == std::string::npos);
+}
+
 TEST_CASE("HoverConnectedInterfaceParametersUseActiveInstance") {
     ServerHarness server("active_interface_port_hover");
     server.setBuildFile("design.f");
@@ -1248,3 +1494,4 @@ endmodule
     recordNoSystemHover("queue selector $", "$] ==");
     recordNoSystemHover("$root", "$root", false);
 }
+
