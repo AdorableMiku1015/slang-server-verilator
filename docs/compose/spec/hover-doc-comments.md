@@ -1,14 +1,37 @@
 ---
 feature: hover-doc-comments
-status: designed
+status: delivered
 updated: 2026-09-28
 branch: feat/hover-doc-comments
-commits:
+commits: 68f7ff1..c4f5638
 ---
 
 # hover-doc-comments
 
 ## Report
+
+**What was built** — hover 的注释段现在由两部分拼成：声明自己的上方注释块（自己没有就退化为它所属声明组的组头注释），以及声明所在行的行尾注释；两部分都没有时照旧不输出注释段。
+
+行尾注释取「渲染出来的语法结束的那一行」，实现上是扫声明之后那些 token 的 leading trivia：`Directive` trivia 自带换行，上一条声明行末尾的注释其实挂在指令**自己的首个 token** 上，因此这一支先读指令首 token 同一行的注释再停止；`EndOfLine`、`DisabledText` 等一律视为行结束。因为中间可能还隔着 `ParameterDeclarationStatement` 的 `;` 或端口列表的 `,`，扫描会在同一行内继续往后走。组头继承走「同一父节点下、紧邻上一行的成员声明」，中间出现空行就断链，限定在 `syntax::MemberSyntax` 内，并且不能爬到文件根节点；模块体内的 `localparam` 会先归位到它的语句包装节点，因此参数声明的分组同样有效。
+
+按用户决定采用不带闸的继承：独占一行的注释块会共享给整组连续声明。代价与实例写在 S2.3；`raw` 模式、`Driven by` 段、函数/类的头部行都不在范围内（S3）。
+
+**Verification**
+
+- `cmake --build build/win64-release --target server_unittests`（Windows，先 `call ...\vcvars64.bat`）：PASS
+- `build/win64-release/bin/server_unittests.exe`：PASS — 377 用例 / 62575 断言全绿；改动前基线 360 用例 / 62523 断言全绿
+- golden：`--update` 后 3 个文件变化（`FindSymbolRefHdl.out`、`FindSymbolRefMacro.out`、`LoadTransitivePackages.out`，合计 68 增 68 删），逐条提取插入片段核对，全部是「组头注释共享给同组声明」这一条规则的预期结果（`hdl_test.sv:94/110/279`、`macros.svh:56`、`cycle_test.sv:10`）；`--update` 在 Windows 写出 CRLF，已还原为 `.gitattributes` 约定的 LF，还原后重跑仍全绿
+- `clang-format --dry-run --Werror --style=file:.clang-format src/util/Formatting.cpp tests/cpp/HoverTests.cpp`：exit 0（用 VS 自带 v22；仓库 pin 的是 v20.1.8，故为近似）
+- 独立复审两轮：首轮报出的 2 个 critical（指令 trivia 破坏行归属、文件首个 token 走丢）、1 个 moderate（多行声明头部行）、1 个格式问题与 1 处规格与代码不符已全部修掉并被复审确认；第二轮只剩规格表述过度声称（函数/类头部），已按实际行为收窄
+- **未验证**：真实编辑器/扩展宿主内的端到端表现——本机没有可运行的扩展宿主测试装置（`integration/runTest.ts` 需要下载 VS Code），hover 文本只在 C++ 测试框架内验证
+
+**Journey log**
+
+- slang 的注释是 leading trivia，token 没有 trailing trivia：某行的行尾注释实际挂在**下一个 token** 上。加上 `findLeadingDocCommentStart` 要求注释块后面另有一个换行，两件事叠起来才解释了「上一行的行尾注释既不显示、也不会被误当成下一行文档注释」这个现状。
+- 指令 trivia 自带换行、且上一行的行尾注释挂在指令**自己的首个 token** 上。只按 `TriviaKind::EndOfLine` 判断行边界会同时造成两种错：声明后面紧跟 `` `ifdef `` 时丢注释，以及 `` `define Z 1 // width `` 那一行的注释被算到上一条声明头上；现在靠 `trivia.syntax()->getFirstToken().trivia()` 那一支解决（第二轮的复审用它自己的探针逐条确认过）。
+- 模块体内的 `localparam` 被包成 `ParameterDeclarationStatement`，端口声明后面跟着 `,`：只看紧邻 token 会漏掉这两种形状的行尾注释，所以扫描要在同一行内继续往后走。同理 `selectDisplayNode` 决定 hover 渲染哪个节点，也就决定行尾注释取自哪一行——函数/类不换成头部，于是只取声明结束那一行。
+- `getDeclarationElement` 按「首个 token 相同的祖先」上爬会一路爬到 CompilationUnit；文件首个 token 属于某条声明时（例如文件以 `typedef` 开头），后续所有基于父节点的遍历都会静默空转，行尾注释整个丢失。上爬必须停在根节点之前。
+- 未纳入本次范围、需要时再单开：文件第 0 字节处的 leading 注释块识别不到（`findLeadingDocCommentStart` 要求注释前面有一个换行）——先于本次改动就存在，因此第一次行尾注释也连带看不到。
 
 ## [S1] Problem
 
@@ -62,7 +85,7 @@ hover 的注释段按顺序由两部分拼成**一段**（沿用现有的逐行�
 
 两者都实测过：只看紧邻 token 时这两种形状取不到行尾注释。多行 `/* */` 只要求它**起始于**本行，起始行之后的续行照常渲染。
 
-扫描的起点是**被渲染的那个节点**（`selectDisplayNode` 的结果），不是 S2.3 里的包装元素：模块/函数/类的 hover 渲染的是头部，其行尾注释就挂在头部那一行的行尾，若从外层声明节点扫起就会越过这一行。跨多行的声明因此取的是「渲染出来的语法结束的那一行」的行尾注释。
+扫描的起点是**被渲染的那个节点**（`selectDisplayNode` 的结果），不是 S2.3 里的包装元素：`selectDisplayNode` 把 module/program/package/interface 换成头部，hover 渲染的就是头部，其行尾注释挂在头部那一行的行尾；若从外层声明节点扫起就会越过这一行。一般化的说法是：**取「渲染出来的语法结束的那一行」的行尾注释**。函数、类等没有被换成头部的多行声明因此取的是声明结束那一行（如 `endfunction`）的注释，头部那一行的注释不算（见 S3）。
 
 全程不扫描源码文本——两个 token 之间的 trivia 按定义只有空白与注释，所以字符串字面量里的 `//` 不会被当成注释（有回归测试固定这一点；指令那一支也只读它自己的 leading trivia）。
 
@@ -118,14 +141,15 @@ base_pkg::data_width_t bus_width;
 - 其他特性（completion、code lens、文档符号等）的注释展示——它们不走 `getDocCommentForHover`。
 - 过程块语句、结构体/枚举成员的组头继承（S2.3 已限制在成员声明；端口声明与 `ParameterDeclarationStatement` 本身是成员，参数与端口都在覆盖范围内）。
 - **hover 的 `Driven by` 段（驱动语句）**：`DefinitionInfo.cpp` 走 `renderCode(paragraph, sm, /*rawDocComments=*/true)`，把驱动语句连同 leading 注释原样渲染进代码块，不经过注释段逻辑，所以驱动语句的行尾注释不显示（保持现状）。
+- **函数/类等未被 `selectDisplayNode` 换成头部的多行声明**：只取声明结束那一行的行尾注释，头部那一行的注释不显示（`function void f(); // fn note` hover 时没有 `fn note`；`endfunction // end note` 才有）。要覆盖头部需要扩展 `selectDisplayNode` 的头部映射，属于另一件事。
 - 通过配置开关关闭新行为。
 
-实测覆盖（都有回归用例）：宏展开出来的声明（`` `DECL(mac); // mac note ``）能取到行尾注释；声明后面紧跟 `` `ifdef `` 时不会丢注释；`` `define Z 1 // width `` 那一行的注释不会被算到上一行声明头上；文件首个 token 属于某条声明时（例如文件以 `typedef` 开头）依然取得到行尾注释；模块/函数/类头部那一行的行尾注释会显示。
+实测覆盖（都有回归用例）：宏展开出来的声明（`` `DECL(mac); // mac note ``）能取到行尾注释；声明后面紧跟 `` `ifdef `` 时不会丢注释；`` `define Z 1 // width `` 那一行的注释不会被算到上一行声明头上；文件首个 token 属于某条声明时（例如文件以 `typedef` 开头）依然取得到行尾注释；模块/接口头部那一行的行尾注释会显示。
 
 ## Tasks
 
-- [ ] T1: 抽出注释渲染与 trivia 扫描的公共辅助（`appendCommentLine` / 首个换行前注释的抽取 / 后继 token 查找 / 上一个成员声明查找），`getDocCommentForHover` 行为不变 — 验收：全量 `server_unittests` 仍全绿（covers: S2.4）
-- [ ] T2: 行尾注释合并进注释段 — 验收：`logic a; // trailing a`（含上方注释、仅有行尾注释、`/* */` 行尾三种写法）hover 都带出行尾注释（covers: S2.1, S2.2, S2.4；depends: T1）
-- [ ] T3: 组头注释继承 — 验收：组内第 2、3 条声明 hover 显示组头注释 + 自己的行尾注释；空行分隔、模块头、跨类型非成员节点都不会误继承（covers: S2.3；depends: T1, T2）
-- [ ] T4: 回归测试 — 验收：`tests/cpp/HoverTests.cpp` 新增用例覆盖 T2/T3 的正例与边界（空行、宏展开声明、`plaintext` 模式、`raw` 模式不变），`--update` 后无 golden 意外变动（covers: S2.2, S2.3, S2.5；depends: T2, T3）
-- [ ] T5: 构建 + 全量测试 — 验收：`cmake --build build/win64-release --target server_unittests && build/win64-release/bin/server_unittests.exe` 全绿（covers: S2.2, S2.3, S2.5）
+- [x] T1: 抽出注释渲染与 trivia 扫描的公共辅助（`appendCommentLine` / 首个换行前注释的抽取 / 后继 token 查找 / 上一个成员声明查找），`getDocCommentForHover` 行为不变 — 验收：全量 `server_unittests` 仍全绿（covers: S2.4）
+- [x] T2: 行尾注释合并进注释段 — 验收：`logic a; // trailing a`（含上方注释、仅有行尾注释、`/* */` 行尾三种写法）hover 都带出行尾注释（covers: S2.1, S2.2, S2.4；depends: T1）
+- [x] T3: 组头注释继承 — 验收：组内第 2、3 条声明 hover 显示组头注释 + 自己的行尾注释；空行分隔、模块头、跨类型非成员节点都不会误继承（covers: S2.3；depends: T1, T2）
+- [x] T4: 回归测试 — 验收：`tests/cpp/HoverTests.cpp` 新增用例覆盖 T2/T3 的正例与边界（空行、宏展开声明、`plaintext` 模式、`raw` 模式不变），`--update` 后无 golden 意外变动（covers: S2.2, S2.3, S2.5；depends: T2, T3）
+- [x] T5: 构建 + 全量测试 — 验收：`cmake --build build/win64-release --target server_unittests && build/win64-release/bin/server_unittests.exe` 全绿（covers: S2.2, S2.3, S2.5）
