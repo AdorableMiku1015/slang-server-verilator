@@ -131,8 +131,15 @@ export class LintManager extends ExtensionComponent {
     }
 
     this.logger.info(`Linting ${target.fsPath}`)
-    const cwd = getWorkspaceFolder() ?? path.dirname(target.fsPath)
-    await Promise.all(this.linters.map((linter) => linter.lint(target, cwd)))
+    // The run belongs to the folder the target is in, so that the tool's working
+    // directory, the relative paths it prints, and the ${workspaceFolder} variable all
+    // point at the same root. A target that is in none of them (a single file, or a
+    // file opened from outside the workspace) keeps the working directory it used to
+    // have, and the folder is left unknown rather than made up from the target.
+    const workspaceFolder =
+      vscode.workspace.getWorkspaceFolder(target)?.uri.fsPath ?? getWorkspaceFolder()
+    const cwd = workspaceFolder ?? path.dirname(target.fsPath)
+    await Promise.all(this.linters.map((linter) => linter.lint(target, cwd, workspaceFolder)))
   }
 
   private target(): vscode.Uri | undefined {

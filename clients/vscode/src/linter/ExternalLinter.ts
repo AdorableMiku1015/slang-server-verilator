@@ -12,6 +12,7 @@ import {
   LocatedFinding,
 } from './lintOutput'
 import { ProcessError, runFailure } from './runFailure'
+import { ExpansionContext, expandVariables } from './variableExpansion'
 
 /// Linting a large design can take a while, but a run that outlives this is stuck
 /// rather than busy
@@ -49,6 +50,9 @@ export abstract class ExternalLinter extends ExtensionComponent {
   private context: vscode.ExtensionContext | undefined
   private resolvedPath: string | undefined
   private toolLookupFailed: boolean = false
+  /// Variables the configured arguments could not resolve, so that a run that keeps
+  /// asking for one does not keep saying so
+  private warnedUnresolved = new Set<string>()
   /// Files this linter reported on in its last run, so that the ones that are gone
   /// from the current run can have their diagnostics dropped
   private reportedFiles = new Map<string, ReportedFile>()
@@ -67,7 +71,10 @@ export abstract class ExternalLinter extends ExtensionComponent {
     )
     this.args = new ConfigObject({
       default: [],
-      description: `Additional arguments to pass to ${toolName}`,
+      description:
+        `Additional arguments to pass to ${toolName}. Variables such as ` +
+        '`${workspaceFolder}`, `${fileDirname}` and `${env:VAR}` are expanded; one that cannot ' +
+        'be resolved is passed on as written.',
     })
     this.diagnostics = vscode.languages.createDiagnosticCollection(toolName)
   }
@@ -77,8 +84,10 @@ export abstract class ExternalLinter extends ExtensionComponent {
     context.subscriptions.push(this.diagnostics)
   }
 
-  /// Run the tool over one file, replacing the diagnostics the previous run reported
-  async lint(target: vscode.Uri, cwd: string): Promise<void> {
+  /// Run the tool over one file, replacing the diagnostics the previous run reported.
+  /// `workspaceFolder` is the folder the run belongs to, which is undefined when the
+  /// target is not in any of them.
+  async lint(target: vscode.Uri, cwd: string, workspaceFolder?: string): Promise<void> {
     if (!this.enabled.getValue()) {
       return
     }
@@ -89,7 +98,8 @@ export abstract class ExternalLinter extends ExtensionComponent {
         return
       }
 
-      const args = [...this.toolArgs(target), ...this.configuredArgs(), target.fsPath]
+      const context = this.expansionContext(target, cwd, workspaceFolder)
+      const args = [...this.toolArgs(target), ...this.configuredArgs(context), target.fsPath]
       this.logger.info(`${tool} ${args.join(' ')}`)
 
       const output = await this.run(tool, args, cwd)
@@ -130,6 +140,7 @@ export abstract class ExternalLinter extends ExtensionComponent {
     this.resolvedPath = undefined
     this.toolLookupFailed = false
     this.notified.clear()
+    this.warnedUnresolved.clear()
   }
 
   /// Drop every diagnostic this linter reported
@@ -167,9 +178,50 @@ export abstract class ExternalLinter extends ExtensionComponent {
   }
 
   /// Each entry may hold several arguments and may quote them, so that an argument
-  /// containing a space can still be written the way a shell would take it
-  private configuredArgs(): string[] {
-    return this.args.getValue().flatMap((arg) => parseArgsStringToArgv(arg))
+  /// containing a space can still be written the way a shell would take it. The
+  /// variables are expanded after the split, so that a value holding a space stays a
+  /// single argument
+  private configuredArgs(context: ExpansionContext): string[] {
+    return this.args
+      .getValue()
+      .flatMap((arg) => parseArgsStringToArgv(arg))
+      .map((arg) => this.expand(arg, context))
+  }
+
+  /// What the variables in the configured arguments mean for this run
+  private expansionContext(
+    target: vscode.Uri,
+    cwd: string,
+    workspaceFolder: string | undefined
+  ): ExpansionContext {
+    return {
+      workspaceFolder,
+      file: target.fsPath,
+      cwd,
+      env: process.env,
+      config: (id) => {
+        const value = vscode.workspace.getConfiguration().get(id)
+        return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+          ? String(value)
+          : undefined
+      },
+    }
+  }
+
+  /// A variable that cannot be resolved is left in the argument for the tool to
+  /// complain about, and said out loud once per settings change
+  private expand(arg: string, context: ExpansionContext): string {
+    const { text, unresolved } = expandVariables(arg, context)
+    for (const variable of unresolved) {
+      if (this.warnedUnresolved.has(variable.name)) {
+        continue
+      }
+      this.warnedUnresolved.add(variable.name)
+      this.logger.warn(
+        `${this.args.configPath}: ${variable.name} was not expanded because ${variable.reason}`
+      )
+    }
+    return text
   }
 
   private run(tool: string, args: string[], cwd: string): Promise<RunResult> {
