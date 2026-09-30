@@ -469,7 +469,7 @@
         },
         "slang.lint.verilator.args": {
           "default": [],
-          "description": "Additional arguments to pass to verilator",
+          "description": "Additional arguments to pass to verilator. Variables such as `${workspaceFolder}`, `${fileDirname}` and `${env:VAR}` are expanded; one that cannot be resolved is passed on as written.",
           "type": "array",
           "items": {
             "type": "string"

@@ -40,7 +40,7 @@
 
 - `slang.lint.verilator.args`: array = []
 
-  Additional arguments to pass to verilator
+  Additional arguments to pass to verilator. Variables such as `${workspaceFolder}`, `${fileDirname}` and `${env:VAR}` are expanded; one that cannot be resolved is passed on as written.
 
 - `slang.path`: path
 

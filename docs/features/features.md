@@ -16,14 +16,32 @@ supported, off by default: set `slang.lint.verilator.enabled`, and `slang.lint.v
 where each entry may hold several arguments and may quote them (`["--top-module top", "-Wall"]`).
 Set `slang.lint.enabled` to `false` to keep only the external linter's diagnostics.
 
-It runs with the workspace folder as its working directory, which is also where verilator looks for
-`include` files, next to the `-I<dir>` directories it is given (`-I` has to be written attached to
-its directory). It lints the [top level](hdl/hdl.md) when one is set, and the file you are editing
-when none is, running on save, when you switch to another file while no top level is set, and when
-the top level or the build being compiled changes. The tool is handed a path, so it reads what is on
-disk: a buffer with unsaved edits is linted in the state it was last saved in. Diagnostics land on
-every file the tool reports on, including headers pulled in by the file that was linted, and the
-ones for a file that no longer has anything to report are dropped with the run that finds that out.
+Each entry is split into arguments first and expanded afterwards, so a value that holds a space
+stays one argument:
+
+```jsonc
+"slang.lint.verilator.args": ["-I${workspaceFolder}/rtl/inc", "--top-module top"]
+```
+
+The variables are the ones VS Code documents for a command line that does not wait on the user:
+`${workspaceFolder}`, `${workspaceFolderBasename}`, `${fileWorkspaceFolder}`, `${file}`,
+`${fileDirname}`, `${fileBasename}`, `${fileBasenameNoExtension}`, `${fileExtname}`,
+`${relativeFile}`, `${relativeFileDirname}`, `${cwd}`, `${pathSeparator}` (or `${/}`),
+`${userHome}`, `${env:NAME}` and `${config:ID}`. `${file}` is the file being linted, so these
+resolve against the [top level](hdl/hdl.md) when one is set. A variable that cannot be resolved is
+passed on as written and written to the log once per settings change, rather than silently
+becoming something else.
+
+It runs with the workspace folder the target is in as its working directory — which is what
+`${workspaceFolder}` and `${cwd}` are — and that is also where verilator looks for `include` files,
+next to the `-I<dir>` directories it is given (`-I` has to be written attached to its directory).
+With several folders open, a target that is in none of them runs in the first one. It lints the
+[top level](hdl/hdl.md) when one is set, and the file you are editing when none is, running on
+save, when you switch to another file while no top level is set, and when the top level or the
+build being compiled changes. The tool is handed a path, so it reads what is on disk: a buffer with
+unsaved edits is linted in the state it was last saved in. Diagnostics land on every file the tool
+reports on, including headers pulled in by the file that was linted, and the ones for a file that
+no longer has anything to report are dropped with the run that finds that out.
 
 
 ### Hovers and Go-to Definition
