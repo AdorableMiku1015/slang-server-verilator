@@ -35,7 +35,9 @@ becoming something else.
 It runs with the workspace folder the target is in as its working directory — which is what
 `${workspaceFolder}` and `${cwd}` are — and that is also where verilator looks for `include` files,
 next to the `-I<dir>` directories it is given (`-I` has to be written attached to its directory).
-With several folders open, a target that is in none of them runs in the first one. It lints the
+With several folders open, a target that is in none of them runs in the first one; with no folder
+open at all it runs in the target's own directory, where `${workspaceFolder}` has nothing to expand
+to. It lints the
 [top level](hdl/hdl.md) when one is set, and the file you are editing when none is, running on
 save, when you switch to another file while no top level is set, and when the top level or the
 build being compiled changes. The tool is handed a path, so it reads what is on disk: a buffer with

@@ -68,6 +68,8 @@ private configuredArgs(): string[] {
 
 **「取不到值」的判定**：变量名不在上表内，或该变量所需的上下文缺失（无工作区文件夹、无目标文件、文件不在工作区文件夹下、环境变量未设置、设置项不存在/非标量）。
 
+两条边界由复审补上并已修：`${env:NAME}` 只认**值为字符串**的项——环境对象是普通对象，`${env:toString}` 这类只从原型链上取到的名字不算用户设置的环境变量；`${relativeFile}` / `${relativeFileDirname}` 只把 `..` 与 `..<分隔符>` 当作「在文件夹之外」，名字以两个点开头的文件（`..foo.sv`）仍在文件夹内。
+
 **「算出来是空串」不算取不到值**：`${env:EMPTY}`（变量已设为空串）、`${relativeFileDirname}`（文件就在工作区根下）都按空串替换，不记警告。空串替换后参数可能只剩下前缀（如 `-I`），这是用户自己写的表达式算出来的结果。
 
 **退化行为**（用户已确认）：取不到值一律**原样保留**在参数里，同时 `logger.warn` 记一条，说明是哪个设置项、哪个变量、为什么没展开。lint 会在每次保存时跑，所以只记日志、不弹窗；**同一个变量名在一次配置变化内只记一次**（与 `notified` 同样在 `onSettingsChanged()` 里清空）。原样保留意味着 verilator 会自己对这个参数报错，用户能看见，而不是参数被悄悄吃掉或改写成别的东西。
@@ -108,17 +110,24 @@ const cwd = folder ?? path.dirname(target.fsPath)
     config?: (id: string) => string | undefined
   }
 
-  /// 展开已知的 ${...}；认不出或取不到值的原样留下并在 unresolved 里报出名字
+  export interface UnresolvedVariable {
+    /// 用户写下的原文，例如 `${env:INC}`
+    name: string
+    /// 没有值的原因，供调用方写进日志
+    reason: string
+  }
+
+  /// 展开已知的 ${...}；认不出或取不到值的原样留下，并在 unresolved 里报出名字与原因
   export function expandVariables(
     text: string,
     ctx: ExpansionContext
-  ): { text: string; unresolved: string[] }
+  ): { text: string; unresolved: UnresolvedVariable[] }
   ```
 
 - `ExternalLinter`：`configuredArgs(ctx: ExpansionContext)` 接收上下文，展开后把 `unresolved` 逐个记 warn（同名一次）；新增 `private warnedUnresolved = new Set<string>()`，在 `onSettingsChanged()` 里随 `notified` 一起清空。上下文在 `lint()` 里组装：`file` = `target.fsPath`、`cwd`/`workspaceFolder` 来自参数、`env` = `process.env`、`config` 用 `vscode.workspace.getConfiguration().get(id)` 适配（string/number/boolean → `String(value)`，其它 → `undefined`）。`lint()` 签名加上工作区文件夹：`lint(target, cwd, workspaceFolder?: string)`。`${config:ID}` 读的是不带资源的设置查找结果（与 `ConfigObject.getValue()` 同一条路径），逐文件夹的资源级取值不在范围内。
 - `LintManager.lintTarget()`：按 S2.3 算出 folder 与 cwd，并把 folder 传给每个 linter。
 - `VerilatorLinter` 不改动：它只提供工具参数与输出解析，展开是基类的事。
-- `warn` 文案形如：`slang.lint.verilator.args: ${env:INC} was not expanded (INC is not set)`——带上设置项路径，否则用户不知道去改哪里。
+- `warn` 文案形如：`slang.lint.verilator.args: ${env:INC} was not expanded because the environment variable INC is not set`——带上设置项路径与原因，否则用户不知道去改哪里、为什么没生效。
 
 ### S2.5 配置与文档同步
 
@@ -143,6 +152,6 @@ tape 覆盖纯模块（`clients/vscode/test/unit/variableExpansion.test.ts`）�
 ## Tasks
 
 - [ ] T1: 新增纯展开模块 `variableExpansion.ts` 与 `test/unit/variableExpansion.test.ts` — 验收：`pnpm build-tests && npx tape "out/test/**/*.js"` 全绿，用例覆盖 S2.1 全表、S2.2 的按参数展开、S2.6 列出的退化与边界 (covers: S2.1, S2.2, S2.6)
-- [ ] T2: 接入 verilator args — `ExternalLinter` 组装上下文、展开、每变量一次 warn（`onSettingsChanged()` 清空），`lint()` 增加工作区文件夹参数；`LintManager` 按 S2.3 锚定 cwd 与 folder — 验收：`npx tsc --noEmit` 与 `pnpm lint:ts` 通过，`slang.lint.verilator.args` 里的 `${workspaceFolder}` 出现在 `execFile` 的实参里（由 T4 核对） (covers: S2.3, S2.4; depends: T1)
+- [ ] T2: 接入 verilator args — `ExternalLinter` 组装上下文、展开、每变量一次 warn（`onSettingsChanged()` 清空），`lint()` 增加工作区文件夹参数；`LintManager` 按 S2.3 锚定 cwd 与 folder — 验收：`npx tsc --noEmit` 通过、改动文件 `eslint` 干净（整仓 `pnpm lint:ts` 另有既有的 `src/extension.ts:270` `no-misused-promises` 报错，记为 `PRE-EXISTING(eslint-extension-270)`，本分支未改动该文件），`slang.lint.verilator.args` 里的 `${workspaceFolder}` 出现在 `execFile` 的实参里（由 T4 核对） (covers: S2.3, S2.4; depends: T1)
 - [ ] T3: 同步配置文本与功能文档 — `ExternalLinter` 的 args 描述、`clients/vscode/package.json`、`clients/vscode/CONFIG.md` 三处逐字一致，`docs/features/features.md` 补变量说明与 `-I${workspaceFolder}/rtl/inc` 例子 — 验收：四处文本相互一致，且没有新增配置键（`config.schema.json` / `config.gen.ts` 无变化） (covers: S2.5; depends: T2)
 - [ ] T4: 构建、全量单测与真实 verilator 核对 — 验收：`pnpm build-tests`、`npx tape "out/test/**/*.js"`、`npx tsc --noEmit`、`pnpm lint:ts` 全绿；用 `C:\verilator\verilator_bin.exe`（v5.050）复刻 `configuredArgs` + `execFile` 的运行路径，确认含空格的 `${workspaceFolder}` 展开后 `-I<dir>` 能命中 include，且未设置的 `${env:...}` 确实以字面量到达命令行（verilator 对其报错） (covers: S2.1, S2.2, S2.4; depends: T2)

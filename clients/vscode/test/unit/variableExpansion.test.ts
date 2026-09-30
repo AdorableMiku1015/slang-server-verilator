@@ -110,6 +110,13 @@ tape('expandVariables: environment variables', (assert) => {
 
   const noEnv = expandVariables('${env:NOPE}', context())
   assert.equal(noEnv.text, '${env:NOPE}', 'an environment that is not there at all')
+
+  const inherited = expandVariables('${env:toString}', context({ env: {} }))
+  assert.equal(inherited.text, '${env:toString}', 'a name the environment only inherits')
+  assert.deepEqual(
+    inherited.unresolved.map((variable) => variable.name),
+    ['${env:toString}']
+  )
   assert.end()
 })
 
@@ -180,6 +187,31 @@ tape('expandVariables: a variable whose context is missing stays as written', (a
   })
   assert.equal(outside.text, '${relativeFile}')
   assert.ok(outside.unresolved[0].reason.includes('not inside'))
+
+  const outsideDirname = expandVariables('${relativeFileDirname}', {
+    workspaceFolder,
+    file: path.join(path.sep, 'elsewhere', 'other.sv'),
+    cwd: workspaceFolder,
+    env: {},
+  })
+  assert.equal(outsideDirname.text, '${relativeFileDirname}')
+
+  for (const variable of ['${relativeFile}', '${relativeFileDirname}']) {
+    const result = expandVariables(variable, { file, cwd: path.dirname(file), env: {} })
+    assert.equal(result.text, variable, `${variable} without a workspace folder`)
+    assert.ok(result.unresolved[0].reason.includes('no workspace folder'))
+  }
+  assert.end()
+})
+
+tape('expandVariables: a name that only starts with dots is inside the folder', (assert) => {
+  const dotted = context({ file: path.join(workspaceFolder, '..foo.sv') })
+  assert.equal(expandVariables('${relativeFile}', dotted).text, '..foo.sv')
+  assert.deepEqual(expandVariables('${relativeFile}', dotted).unresolved, [])
+
+  const dottedDir = context({ file: path.join(workspaceFolder, '..dir', 'top.sv') })
+  assert.equal(expandVariables('${relativeFileDirname}', dottedDir).text, '..dir')
+  assert.deepEqual(expandVariables('${relativeFileDirname}', dottedDir).unresolved, [])
   assert.end()
 })
 

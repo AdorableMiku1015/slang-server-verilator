@@ -70,9 +70,11 @@ function resolve(key: string, ctx: ExpansionContext): Resolution {
   if (key.startsWith('env:')) {
     const name = key.slice('env:'.length)
     const value = ctx.env?.[name]
-    return value === undefined
-      ? { reason: `the environment variable ${name} is not set` }
-      : { value }
+    // An environment is an ordinary object, so a name it only inherits from its
+    // prototype is not a variable the user set
+    return typeof value === 'string'
+      ? { value }
+      : { reason: `the environment variable ${name} is not set` }
   }
 
   if (key.startsWith('config:')) {
@@ -139,7 +141,9 @@ function relativeToWorkspace(
   }
 
   const relative = path.relative(ctx.workspaceFolder, ctx.file)
-  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+  // `..` and `..<separator>` are the escapes out of the folder; a name that merely
+  // starts with two dots is a file inside it
+  if (path.isAbsolute(relative) || relative === '..' || relative.startsWith(`..${path.sep}`)) {
     return { reason: OUTSIDE_WORKSPACE_FOLDER }
   }
   return { value: derive(relative) }
