@@ -19,7 +19,7 @@ commits: cf5dfad..cdd2b6f
 - `npx tsc -p . --outDir out`（clients/vscode）：exit 0 — PASS
 - `npx tape "out/test/**/*.js"`：276/276 断言 — PASS（改动前基线 169；新增 `variableExpansion.test.ts` 107 条，其中 11 条来自复审后的补测）
 - `npx eslint src/linter/variableExpansion.ts src/linter/ExternalLinter.ts src/linter/LintManager.ts`：exit 0 — PASS
-- `npx eslint src --ext ts`：1 个错误 `src/extension.ts:270` `@typescript-eslint/no-misused-promises` — `PRE-EXISTING(eslint-extension-270)`：该文件本分支未改动（`git diff cf5dfad..HEAD -- src/extension.ts` 为空），由 `ca5f1ee` 引入。`.github/workflows/vscode-ci.yml` 对 `clients/vscode/**` 跑的正是这条 `pnpm lint:ts`，因此该 CI 步骤在本分支与基线同样为红，需另行处理
+- `npx eslint src --ext ts`：exit 0 — PASS。改动前这条命令（也正是 `.github/workflows/vscode-ci.yml` 对 `clients/vscode/**` 跑的 `pnpm lint:ts`）在 `src/extension.ts:270` 有一条 `@typescript-eslint/no-misused-promises`：由 `ca5f1ee` 引入、本特性未改动该文件，属 `PRE-EXISTING(eslint-extension-270)`；按用户要求在同一分支上补修（`async` 通知处理器改为调用具名方法 `reportInternalError`）。这一处修复不在上文复审范围 `cf5dfad..cdd2b6f` 内
 - `prettier --check`（本机 pnpm store 里的 3.9.8；hook 钉的是 mirrors-prettier v4.0.0-alpha.8，故为近似）：改动文件全部符合 — PASS
 - 真实 verilator 核对（`C:\verilator\verilator_bin.exe`，rev v5.052-271-g0572ed9f5）：9/9 检查通过。含空格路径下 `-I${workspaceFolder}/inc` 展开成单个绝对参数并命中 include（退出码 0、stderr 无 `%Error`）；`-f${env:SLANG_VAR_UNSET}` 原样到达命令行、被报为 unresolved，verilator 自己打印 `%Error: Invalid option: -f${env:SLANG_VAR_UNSET}`。脚本为一次性（已删）；执行时用文件描述符而非管道接子进程输出
 - 独立复审两轮：首轮无 critical，报出我新代码的 2 处边界问题（`${env:toString}` 顺原型链被展开、`..foo.sv` 被误判为文件夹之外）、2 处覆盖缺口、1 处注释与文档不符，全部修掉；第二轮确认 4 项均已修复，只剩文档/注释级问题（S2.4 签名草图、T4 验收措辞、`lint()` 契约注释、`features.md` 换行），均已改。收尾这一轮只动注释与文档，用 tsc/tape/eslint/prettier 加逐条比对确认，未再派第三次复审

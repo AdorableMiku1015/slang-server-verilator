@@ -265,21 +265,9 @@ File input is sent to stdin, and formatted output is read from stdout.',
     // The server keeps going after a failure and logs the details, so make sure that failure does
     // not pass silently
     this.context.subscriptions.push(
-      this.client.onNotification(
-        'slang/internalError',
-        async (params: slang.InternalErrorParams) => {
-          this.logger.warn(`Internal error in ${params.method}: ${params.message}`)
-          const show = 'Show Output'
-          const resp = await vscode.window.showWarningMessage(
-            `slang-server hit an internal error while handling ${params.method}: ` +
-              `${params.message}. More details are in the Slang Server output.`,
-            show
-          )
-          if (resp === show) {
-            await this.showOutput.func()
-          }
-        }
-      )
+      this.client.onNotification('slang/internalError', (params: slang.InternalErrorParams) => {
+        void this.reportInternalError(params)
+      })
     )
 
     this.client.registerFeature(this.inactiveRegions)
@@ -364,6 +352,20 @@ File input is sent to stdin, and formatted output is read from stdout.',
     // Check for updates in the background (only for managed installs)
     if (this.path.managedInstall) {
       void this.checkForUpdates(serverVersion)
+    }
+  }
+
+  /// Tell the user about a failure the server survived, and offer the log that has the details
+  private async reportInternalError(params: slang.InternalErrorParams): Promise<void> {
+    this.logger.warn(`Internal error in ${params.method}: ${params.message}`)
+    const show = 'Show Output'
+    const resp = await vscode.window.showWarningMessage(
+      `slang-server hit an internal error while handling ${params.method}: ` +
+        `${params.message}. More details are in the Slang Server output.`,
+      show
+    )
+    if (resp === show) {
+      await this.showOutput.func()
     }
   }
 
