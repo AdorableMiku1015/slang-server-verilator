@@ -163,10 +163,11 @@ void SlangDoc::onChange(const std::vector<lsp::TextDocumentContentChangeEvent>& 
         return;
     }
 
+    // LSP Position.character is a UTF-16 code unit: this server answers with no
+    // positionEncoding, which leaves the client on the UTF-16 default it already speaks
     auto getOffsets = [&](lsp::Range range) {
         // Only one thread is able to call onchange, so the offsets remain valid without locking
         SourceManager::computeLineOffsets(textView, lineOffsets);
-
         // LSP positions point at a line and a UTF-16 column, but the buffer is UTF-8 bytes.
         auto getOffset = [&](const lsp::Position& pos, std::string_view which) {
             if (pos.line >= lineOffsets.size()) {

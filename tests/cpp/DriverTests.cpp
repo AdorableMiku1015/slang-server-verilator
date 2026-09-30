@@ -124,6 +124,37 @@ endmodule
     CHECK(std::string_view{text.data(), expected.size()} == expected);
 }
 
+TEST_CASE("onChange applies UTF-16 columns whatever encoding the client offers") {
+    // The server answers with no positionEncoding, so the session stays on the UTF-16
+    // default even for a client that also offers utf-8
+    for (const auto& offered : {std::vector<lsp::PositionEncodingKind>{},
+                                std::vector<lsp::PositionEncodingKind>{"utf-16"},
+                                std::vector<lsp::PositionEncodingKind>{"utf-16", "utf-8"}}) {
+        lsp::InitializeParams params{};
+        if (!offered.empty()) {
+            params.capabilities.general =
+                lsp::GeneralClientCapabilities{.positionEncodings = offered};
+        }
+
+        ClientHarness client;
+        server::SlangServer server(client);
+        auto result = server.getInitialize(params);
+        CHECK_FALSE(result.capabilities.positionEncoding.has_value());
+
+        ServerHarness harness(params);
+        // "// ä€𐍈" is 12 bytes but 7 UTF-16 columns, so the x after it is column 7
+        std::string prefix = "// \xC3\xA4\xE2\x82\xAC\xF0\x90\x8D\x88";
+        auto hdl = harness.openFile("test.sv", prefix + "x\r\nmodule m; endmodule\n");
+        harness.onDocDidChange(lsp::DidChangeTextDocumentParams{
+            .textDocument = lsp::VersionedTextDocumentIdentifier{.uri = hdl.doc->getURI()},
+            .contentChanges = {lsp::TextDocumentContentChangePartial{
+                                   .range = {{0, 7}, {0, 8}}, .text = "\xC3\xA4"},
+                               lsp::TextDocumentContentChangePartial{
+                                   .range = {{0, 8}, {0, 8}}, .text = "y"}}});
+        CHECK(hdl.doc->textMatches(prefix + "\xC3\xA4y\r\nmodule m; endmodule\n"));
+    }
+}
+
 TEST_CASE("Cancelled didChange applies edits without rebuilding analysis") {
     ServerHarness server;
     auto hdl = server.openFile("test.sv", R"(module test;

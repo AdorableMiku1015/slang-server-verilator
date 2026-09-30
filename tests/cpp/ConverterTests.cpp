@@ -29,6 +29,23 @@ TEST_CASE("LSP positions use raw source lines") {
     CHECK(range.end.character == 4);
 }
 
+TEST_CASE("utf16ToByteOffset measures invalid UTF-8 one byte at a time") {
+    using server::utf16ToByteOffset;
+    // A malformed sequence is one code unit per byte, so the rest of the line still lines up.
+    // A column past the end of the line is rejected rather than clamped to it.
+    for (std::string_view line : {"\x80x", "\xFFx", "\xC2", "\xE2\x82", "\xF0\x90\x8D", "\xE2x",
+                                  "\xC0\xAF", "\xED\xA0\x80", "\xF4\x90\x80\x80"}) {
+        CAPTURE(line);
+        CHECK(utf16ToByteOffset(line, 0) == 0);
+        CHECK(utf16ToByteOffset(line, 1) == 1);
+        CHECK(utf16ToByteOffset(line, 99) == std::nullopt);
+    }
+
+    // A malformed lead byte does not swallow the character after it, in either direction
+    CHECK(utf16ToByteOffset("\xE2x", 2) == 2);
+    CHECK(server::utf16Length("\xE2x") == 2);
+}
+
 TEST_CASE("LSP positions resolve macro locations") {
     slang::SourceManager sourceManager;
     auto buffer = sourceManager.assignText("source.sv", "first\nmacro(D)\n");

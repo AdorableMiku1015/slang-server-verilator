@@ -13,6 +13,7 @@
 #include "slang/ast/symbols/CompilationUnitSymbols.h"
 #include "slang/ast/types/AllTypes.h"
 #include "slang/text/SourceLocation.h"
+#include "util/Formatting.h"
 
 namespace server {
 
@@ -49,24 +50,20 @@ uint32_t utf16Length(std::string_view text) {
         if (byte < 0x80) {
             i += 1;
             count += 1;
+            continue;
         }
-        else if ((byte & 0xE0) == 0xC0) {
-            i += std::min<size_t>(2, text.size() - i);
-            count += 1;
-        }
-        else if ((byte & 0xF0) == 0xE0) {
-            i += std::min<size_t>(3, text.size() - i);
-            count += 1;
-        }
-        else if ((byte & 0xF8) == 0xF0) {
-            i += std::min<size_t>(4, text.size() - i);
-            count += 2;
-        }
-        else {
-            // Invalid byte; treat it as a single unit so we always make progress
+
+        // A malformed sequence counts one unit per byte, the same way utf16ToByteOffset
+        // measures one, so that the two directions agree on text the client cannot encode
+        auto sequence = validUtf8SequenceLength(text.substr(i));
+        if (sequence == 0) {
             i += 1;
             count += 1;
+            continue;
         }
+
+        i += sequence;
+        count += sequence == 4 ? 2 : 1;
     }
     return count;
 }
@@ -77,21 +74,16 @@ std::optional<size_t> utf16ToByteOffset(std::string_view line, uint32_t column) 
         if (count == column)
             return i;
 
-        auto byte = static_cast<unsigned char>(line[i]);
+        // A valid sequence is one code unit, or two for a surrogate pair. A malformed one
+        // counts one unit per byte, so that the bytes after it still line up
         size_t length = 1;
         uint32_t units = 1;
-        if (byte < 0x80) {
-            length = 1;
-        }
-        else if ((byte & 0xE0) == 0xC0) {
-            length = 2;
-        }
-        else if ((byte & 0xF0) == 0xE0) {
-            length = 3;
-        }
-        else if ((byte & 0xF8) == 0xF0) {
-            length = 4;
-            units = 2;
+        if (static_cast<unsigned char>(line[i]) >= 0x80) {
+            auto sequence = validUtf8SequenceLength(line.substr(i));
+            if (sequence != 0) {
+                length = sequence;
+                units = length == 4 ? 2 : 1;
+            }
         }
 
         i += std::min(length, line.size() - i);

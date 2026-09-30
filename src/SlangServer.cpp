@@ -270,6 +270,8 @@ lsp::InitializeResult SlangServer::getInitialize(const lsp::InitializeParams& pa
     auto result = lsp::InitializeResult{
         .capabilities =
             lsp::ServerCapabilities{
+                // No positionEncoding is advertised, so the session stays on the UTF-16
+                // default; every position this server reads or writes is counted that way
                 .textDocumentSync =
                     lsp::TextDocumentSyncOptions{
                         .openClose = true,
