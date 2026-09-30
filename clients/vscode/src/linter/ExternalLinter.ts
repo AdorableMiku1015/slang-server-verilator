@@ -85,8 +85,8 @@ export abstract class ExternalLinter extends ExtensionComponent {
   }
 
   /// Run the tool over one file, replacing the diagnostics the previous run reported.
-  /// `workspaceFolder` is the folder the run belongs to, which is undefined when the
-  /// target is not in any of them.
+  /// `workspaceFolder` is the folder the run belongs to: the one the target is in, the
+  /// first one when it is in none of them, and undefined only when no folder is open.
   async lint(target: vscode.Uri, cwd: string, workspaceFolder?: string): Promise<void> {
     if (!this.enabled.getValue()) {
       return
