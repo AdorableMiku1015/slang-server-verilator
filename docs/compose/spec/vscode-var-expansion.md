@@ -1,14 +1,37 @@
 ---
 feature: vscode-var-expansion
-status: in-progress
+status: delivered
 updated: 2026-09-30
 branch: feat/vscode-var-expansion
-commits:
+commits: cf5dfad..cdd2b6f
 ---
 
 # vscode-var-expansion
 
 ## Report
+
+**What was built** — `slang.lint.verilator.args` 的每个元素现在先经 `parseArgsStringToArgv` 切分、再逐个展开 VS Code 变量（上表那 16 个非交互变量），最后才拼上内建参数与目标文件路径；切分在前，所以含空格的值始终是一个 argv 元素。展开只作用于用户在设置里写的文本，`--lint-only`/`-sv` 与末尾的目标路径不参与。取不到值的变量（名字不认识、上下文缺失、环境变量不是字符串、设置项非标量）原样保留在参数里，并记一条 `logger.warn`（同名每次配置变化只记一次、不弹窗），由工具自己去报错。
+
+`LintManager` 把一次运行锚定到目标文件所在的工作区文件夹：cwd、`${cwd}`、`${workspaceFolder}` 从此是同一个值，多根工作区下 cwd 从「第一个文件夹」改为目标所在文件夹（verilator 打印的相对路径也因此归到同一个根）；窗口没有打开任何文件夹时 cwd 仍是目标所在目录，而 `workspaceFolder` 独立传成 `undefined`，`${workspaceFolder}` 不会被错展开成那个目录。`ExternalLinter` 的 args 描述、`clients/vscode/package.json`、`clients/vscode/CONFIG.md` 三处逐字同步，`docs/features/features.md` 补了变量表、`-I${workspaceFolder}/rtl/inc` 示例与多根/无文件夹的语义，未新增配置键。
+
+**Verification**
+
+- `npx tsc -p . --outDir out`（clients/vscode）：exit 0 — PASS
+- `npx tape "out/test/**/*.js"`：276/276 断言 — PASS（改动前基线 169；新增 `variableExpansion.test.ts` 107 条，其中 11 条来自复审后的补测）
+- `npx eslint src/linter/variableExpansion.ts src/linter/ExternalLinter.ts src/linter/LintManager.ts`：exit 0 — PASS
+- `npx eslint src --ext ts`：1 个错误 `src/extension.ts:270` `@typescript-eslint/no-misused-promises` — `PRE-EXISTING(eslint-extension-270)`：该文件本分支未改动（`git diff cf5dfad..HEAD -- src/extension.ts` 为空），由 `ca5f1ee` 引入。`.github/workflows/vscode-ci.yml` 对 `clients/vscode/**` 跑的正是这条 `pnpm lint:ts`，因此该 CI 步骤在本分支与基线同样为红，需另行处理
+- `prettier --check`（本机 pnpm store 里的 3.9.8；hook 钉的是 mirrors-prettier v4.0.0-alpha.8，故为近似）：改动文件全部符合 — PASS
+- 真实 verilator 核对（`C:\verilator\verilator_bin.exe`，rev v5.052-271-g0572ed9f5）：9/9 检查通过。含空格路径下 `-I${workspaceFolder}/inc` 展开成单个绝对参数并命中 include（退出码 0、stderr 无 `%Error`）；`-f${env:SLANG_VAR_UNSET}` 原样到达命令行、被报为 unresolved，verilator 自己打印 `%Error: Invalid option: -f${env:SLANG_VAR_UNSET}`。脚本为一次性（已删）；执行时用文件描述符而非管道接子进程输出
+- 独立复审两轮：首轮无 critical，报出我新代码的 2 处边界问题（`${env:toString}` 顺原型链被展开、`..foo.sv` 被误判为文件夹之外）、2 处覆盖缺口、1 处注释与文档不符，全部修掉；第二轮确认 4 项均已修复，只剩文档/注释级问题（S2.4 签名草图、T4 验收措辞、`lint()` 契约注释、`features.md` 换行），均已改。收尾这一轮只动注释与文档，用 tsc/tape/eslint/prettier 加逐条比对确认，未再派第三次复审
+- **未验证**：扩展宿主内的端到端行为（保存/切换编辑器/设置变化触发、同名变量只记一次 warn、多根工作区下 cwd 实际生效、诊断落点）——本机没有可运行的扩展宿主装置（`integration/runTest.ts` 需要下载 VS Code），与 `verilator-lint-refactor` 的结论一致
+
+**Journey log**
+
+- 展开必须放在 `parseArgsStringToArgv` **之后**按参数进行：`C:\Users\My Name\...` 这类值若先展开再切分，`-I${workspaceFolder}/inc` 会裂成两个 argv 元素；真机核对里那个带空格的工作区用例就是固定这件事的。
+- `${workspaceFolder}` 与 cwd 必须同时锚定：只改其中一个，同一个 run 里「相对路径相对谁」就会有两个答案；由此还发现无工作区窗口要把 `workspaceFolder` 独立于 cwd 传下去，否则 `${workspaceFolder}` 会被错展开成目标文件所在目录。
+- 环境对象是普通对象：`ctx.env?.[name] !== undefined` 会把 `toString`/`constructor`/`__proto__` 展开成函数与对象源码；只认字符串既符合「未设置就原样保留」，也不会让非字符串顺着 `{ value: string }` 的类型撒谎。
+- `relative.startsWith('..')` 是错的判据（`..foo.sv` 是文件夹内的合法文件名），正确判据是 `path.isAbsolute(relative) || relative === '..' || relative.startsWith('..' + path.sep)`，其中第一项负责跨盘与 UNC。`clients/vscode/src/sidebar/BuildConfigUtils.ts:76` 有同一形状的启发式，属另一模块，本次未动。
+- 本机沙箱禁止 Node 子进程的管道 stdio（`execFile` 直接 `EPERM`）：真实 verilator 核对改成把子进程 stdout/stderr 绑到文件描述符再读文件，否则最有力的这条证据根本跑不出来。
 
 ## [S1] Problem
 
@@ -155,7 +178,7 @@ tape 覆盖纯模块（`clients/vscode/test/unit/variableExpansion.test.ts`）�
 
 ## Tasks
 
-- [ ] T1: 新增纯展开模块 `variableExpansion.ts` 与 `test/unit/variableExpansion.test.ts` — 验收：`pnpm build-tests && npx tape "out/test/**/*.js"` 全绿，用例覆盖 S2.1 全表、S2.2 的按参数展开、S2.6 列出的退化与边界 (covers: S2.1, S2.2, S2.6)
-- [ ] T2: 接入 verilator args — `ExternalLinter` 组装上下文、展开、每变量一次 warn（`onSettingsChanged()` 清空），`lint()` 增加工作区文件夹参数；`LintManager` 按 S2.3 锚定 cwd 与 folder — 验收：`npx tsc --noEmit` 通过、改动文件 `eslint` 干净（整仓 `pnpm lint:ts` 另有既有的 `src/extension.ts:270` `no-misused-promises` 报错，记为 `PRE-EXISTING(eslint-extension-270)`，本分支未改动该文件），`slang.lint.verilator.args` 里的 `${workspaceFolder}` 出现在 `execFile` 的实参里（由 T4 核对） (covers: S2.3, S2.4; depends: T1)
-- [ ] T3: 同步配置文本与功能文档 — `ExternalLinter` 的 args 描述、`clients/vscode/package.json`、`clients/vscode/CONFIG.md` 三处逐字一致，`docs/features/features.md` 补变量说明与 `-I${workspaceFolder}/rtl/inc` 例子 — 验收：四处文本相互一致，且没有新增配置键（`config.schema.json` / `config.gen.ts` 无变化） (covers: S2.5; depends: T2)
-- [ ] T4: 构建、全量单测与真实 verilator 核对 — 验收：`pnpm build-tests`、`npx tape "out/test/**/*.js"`、`npx tsc --noEmit` 全绿，改动文件 `eslint` 干净（整仓 lint 的既有报错与 T2 同一条，记为 `PRE-EXISTING(eslint-extension-270)`）；用 `C:\verilator\verilator_bin.exe`（v5.052-271-g0572ed9f5）复刻 `configuredArgs` + `execFile` 的运行路径，确认含空格的 `${workspaceFolder}` 展开后 `-I<dir>` 能命中 include，且未设置的 `${env:...}` 确实以字面量到达命令行（verilator 对其报错） (covers: S2.1, S2.2, S2.4; depends: T2)
+- [x] T1: 新增纯展开模块 `variableExpansion.ts` 与 `test/unit/variableExpansion.test.ts` — 验收：`pnpm build-tests && npx tape "out/test/**/*.js"` 全绿，用例覆盖 S2.1 全表、S2.2 的按参数展开、S2.6 列出的退化与边界 (covers: S2.1, S2.2, S2.6)
+- [x] T2: 接入 verilator args — `ExternalLinter` 组装上下文、展开、每变量一次 warn（`onSettingsChanged()` 清空），`lint()` 增加工作区文件夹参数；`LintManager` 按 S2.3 锚定 cwd 与 folder — 验收：`npx tsc --noEmit` 通过、改动文件 `eslint` 干净（整仓 `pnpm lint:ts` 另有既有的 `src/extension.ts:270` `no-misused-promises` 报错，记为 `PRE-EXISTING(eslint-extension-270)`，本分支未改动该文件），`slang.lint.verilator.args` 里的 `${workspaceFolder}` 出现在 `execFile` 的实参里（由 T4 核对） (covers: S2.3, S2.4; depends: T1)
+- [x] T3: 同步配置文本与功能文档 — `ExternalLinter` 的 args 描述、`clients/vscode/package.json`、`clients/vscode/CONFIG.md` 三处逐字一致，`docs/features/features.md` 补变量说明与 `-I${workspaceFolder}/rtl/inc` 例子 — 验收：四处文本相互一致，且没有新增配置键（`config.schema.json` / `config.gen.ts` 无变化） (covers: S2.5; depends: T2)
+- [x] T4: 构建、全量单测与真实 verilator 核对 — 验收：`pnpm build-tests`、`npx tape "out/test/**/*.js"`、`npx tsc --noEmit` 全绿，改动文件 `eslint` 干净（整仓 lint 的既有报错与 T2 同一条，记为 `PRE-EXISTING(eslint-extension-270)`）；用 `C:\verilator\verilator_bin.exe`（v5.052-271-g0572ed9f5）复刻 `configuredArgs` + `execFile` 的运行路径，确认含空格的 `${workspaceFolder}` 展开后 `-I<dir>` 能命中 include，且未设置的 `${env:...}` 确实以字面量到达命令行（verilator 对其报错） (covers: S2.1, S2.2, S2.4; depends: T2)
