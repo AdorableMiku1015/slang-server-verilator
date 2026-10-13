@@ -560,11 +560,21 @@ void CompletionDispatch::getCompletions(std::vector<lsp::CompletionItem>& result
     context.query->getCompletions(results, *this, doc, context);
 
     for (auto& item : results) {
-        // Resolution is a separate request and must retain the requesting file's context. Symbols
-        // that came out of the current analysis already carry their own data, which resolves the
-        // item against the buffer it was built from instead of the workspace index.
-        if (item.kind == lsp::CompletionItemKind::Module && !item.data)
-            item.data = std::string(doc->getURI().str());
+        // Resolution is a separate request and must retain the requesting file's context. The
+        // instance resolver reads it back for the declaration kinds it handles, so every one of
+        // them has to carry it. Symbols that came out of the current analysis already have their
+        // own data, which resolves the item against the buffer it was built from.
+        if (!item.data) {
+            switch (item.kind.value_or(lsp::CompletionItemKind::Text)) {
+                case lsp::CompletionItemKind::Module:
+                case lsp::CompletionItemKind::Interface:
+                case lsp::CompletionItemKind::Class:
+                    item.data = std::string(doc->getURI().str());
+                    break;
+                default:
+                    break;
+            }
+        }
         context.query->setCompletionEdit(item);
     }
 
