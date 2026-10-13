@@ -846,8 +846,8 @@ TEST_CASE("OutOfRangeChangesAreRejected") {
 TEST_CASE("WatchedFiles_EditorChangesRemainInSync") {
     // The server answers with no positionEncoding, so this runs the same either way: a client
     // that offers utf-8 still gets its columns read as UTF-16
-    const bool offersUtf8 = GENERATE(false, true);
-    CAPTURE(offersUtf8);
+    const bool clientOffersUtf8 = GENERATE(false, true);
+    CAPTURE(clientOffersUtf8);
     auto tempDir = std::filesystem::temp_directory_path() / "slang_test_watched_editor with spaces";
     std::filesystem::create_directories(tempDir);
     auto file = tempDir / "top.sv";
@@ -860,7 +860,7 @@ TEST_CASE("WatchedFiles_EditorChangesRemainInSync") {
                              lsp::GeneralClientCapabilities{
                                  .positionEncodings =
                                      std::vector<lsp::PositionEncodingKind>{
-                                         offersUtf8 ? "utf-8" : "utf-16"}}},
+                                         clientOffersUtf8 ? "utf-8" : "utf-16"}}},
         .workspaceFolders = {
             {lsp::WorkspaceFolder{.uri = URI::fromFile(tempDir), .name = "test"}}}});
     auto doc = server.openFile("top.sv");

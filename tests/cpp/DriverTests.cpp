@@ -814,8 +814,8 @@ TEST_CASE("onChange applies UTF-16 columns whatever encoding the client offers")
                                 std::vector<lsp::PositionEncodingKind>{"utf-16", "utf-8"}}) {
         lsp::InitializeParams params{};
         if (!offered.empty()) {
-            params.capabilities.general =
-                lsp::GeneralClientCapabilities{.positionEncodings = offered};
+            params.capabilities.general = lsp::GeneralClientCapabilities{
+                .positionEncodings = offered};
         }
 
         ClientHarness client;
@@ -829,10 +829,10 @@ TEST_CASE("onChange applies UTF-16 columns whatever encoding the client offers")
         auto hdl = harness.openFile("test.sv", prefix + "x\r\nmodule m; endmodule\n");
         harness.onDocDidChange(lsp::DidChangeTextDocumentParams{
             .textDocument = lsp::VersionedTextDocumentIdentifier{.uri = hdl.doc->getURI()},
-            .contentChanges = {lsp::TextDocumentContentChangePartial{
-                                   .range = {{0, 7}, {0, 8}}, .text = "\xC3\xA4"},
-                               lsp::TextDocumentContentChangePartial{
-                                   .range = {{0, 8}, {0, 8}}, .text = "y"}}});
+            .contentChanges = {lsp::TextDocumentContentChangePartial{.range = {{0, 7}, {0, 8}},
+                                                                     .text = "\xC3\xA4"},
+                               lsp::TextDocumentContentChangePartial{.range = {{0, 8}, {0, 8}},
+                                                                     .text = "y"}}});
         CHECK(hdl.doc->textMatches(prefix + "\xC3\xA4y\r\nmodule m; endmodule\n"));
     }
 }
