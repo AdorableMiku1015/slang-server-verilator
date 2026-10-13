@@ -23,7 +23,6 @@
 #    pragma comment(lib, "ws2_32.lib")
 typedef int socklen_t;
 typedef SSIZE_T ssize_t;
-#    define close closesocket
 #    define MSG_DONTWAIT 0
 #else
 #    include <arpa/inet.h>
@@ -67,9 +66,15 @@ private:
     // Waveform viewer command
     std::string m_command;
 
+    // Close the sockets and stop the client loop.
     void stop() {
+#ifdef _WIN32
+        closesocket(m_clientFd);
+        closesocket(m_serverFd);
+#else
         close(m_clientFd);
         close(m_serverFd);
+#endif
         m_running = false;
     }
 

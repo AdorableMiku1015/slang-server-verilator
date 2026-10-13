@@ -35,16 +35,18 @@ using namespace slang;
 /// options passed in a filelist
 class ServerDriver {
 public:
+    /// Create an explore driver; failed loads return null when requireValidConfig is set.
     static std::unique_ptr<ServerDriver> createForExplore(
         Indexer& indexer, SlangLspClient& client, const Config& config,
         std::optional<std::string_view> workspaceFolder = std::nullopt,
-        const ServerDriver* oldDriver = nullptr);
+        const ServerDriver* oldDriver = nullptr, bool requireValidConfig = false);
 
+    /// Create a build driver; failed loads return null when requireValidConfig is set.
     static std::unique_ptr<ServerDriver> createFromFileLists(
         Indexer& indexer, SlangLspClient& client, const Config& config,
         std::vector<std::string> buildfiles,
         std::optional<std::string_view> workspaceFolder = std::nullopt,
-        const ServerDriver* oldDriver = nullptr);
+        const ServerDriver* oldDriver = nullptr, bool requireValidConfig = false);
     /// Mapping of URI to SlangDoc, which may hold a shallow analysis of the document
     std::unordered_map<URI, std::shared_ptr<SlangDoc>> docs;
 
@@ -91,7 +93,7 @@ public:
     bool isDocumentOpen(const URI& uri);
 
     /// @brief Handle workspace file change notifications from the file watcher
-    /// Reloads all changed buffers first, then updates open documents
+    /// Reloads disk-backed dependencies before analysis, preserving editor-owned buffers.
     void onWorkspaceDidChangeWatchedFiles(const lsp::DidChangeWatchedFilesParams& params);
 
     std::shared_ptr<SlangDoc> getDocument(const URI& uri);
@@ -101,8 +103,43 @@ public:
     /// selection. Refreshes client-side code lenses and inlay hints.
     bool setActiveInstance(std::string_view hierPath);
 
+    /// Load nearest indexed dependencies, recursing through packages and interfaces.
+    /// When fullHierarchy is set, also recurse through instantiated modules.
     std::vector<std::shared_ptr<syntax::SyntaxTree>> getDependentTrees(
-        std::shared_ptr<syntax::SyntaxTree> tree);
+        std::shared_ptr<syntax::SyntaxTree> tree, bool fullHierarchy = false);
+
+    /// Infer include paths for this syntax tree only, then refresh its include relationships.
+    std::shared_ptr<syntax::SyntaxTree> parseShallowTree(SourceBuffer buffer, Bag& documentOptions);
+
+    /// Identifies a file's selected enclosing source and occurrence within that source.
+    struct IncludeContextSelection {
+        /// File whose analysis should use this context.
+        URI uri;
+        /// Root source containing the include, possibly through other headers.
+        URI source;
+        /// Zero-based occurrence of this file in the root source's include list.
+        size_t occurrence = 0;
+    };
+
+    /// A parsed include occurrence and the source that owns its compilation.
+    struct IncludeContext {
+        /// Root document providing the compilation and preprocessor context.
+        std::shared_ptr<SlangDoc> source;
+        /// Buffer for this particular include occurrence.
+        BufferID buffer;
+        /// Immediate include directive, used for navigation.
+        lsp::Location location;
+        /// Stable ordinal among this file's occurrences in the root source.
+        size_t occurrence;
+    };
+
+    /// Find active include occurrences, with the selected context first.
+    /// selectedOnly stops after finding a usable context for document analysis.
+    std::vector<IncludeContext> getIncludeContexts(const std::filesystem::path& path,
+                                                   bool selectedOnly = false);
+
+    /// Select a validated include occurrence and refresh open documents and annotations.
+    bool setIncludeContext(const IncludeContextSelection& selection);
 
     std::vector<std::string> getModulesInFile(const std::string& path);
 
@@ -167,9 +204,10 @@ public:
     /// @param client Reference to the slang client for error reporting
     /// @param config Reference to the configuration object
     /// @param buildfiles List of build files to process
+    /// @param requireValidConfig Log load errors without sending them to the editor.
     ServerDriver(Indexer& indexer, SlangLspClient& client, const Config& config,
                  std::vector<std::string> buildfiles,
-                 std::optional<std::string_view> workspaceFolder);
+                 std::optional<std::string_view> workspaceFolder, bool requireValidConfig = false);
 
     size_t getWsRelativePathOffset(std::string_view path) const {
         return path.starts_with(m_workspacePathPrefix) ? m_workspacePathPrefix.size() : 0;
@@ -187,13 +225,16 @@ private:
     /// Reference to the indexer for module/macro indexing
     Indexer& m_indexer;
 
-    /// Reference to the config object
-    const Config& m_config;
+    /// Configuration owned by this driver, including while a replacement is being validated.
+    Config m_config;
+
+    /// Whether config flags, command files, and source files loaded successfully.
+    bool m_configLoaded = false;
 
     std::string m_workspacePathPrefix;
 
     /// Parse config flags and build files, load sources, create documents
-    void parseAndLoadSources(const std::vector<std::string>& buildfiles);
+    bool parseAndLoadSources(const std::vector<std::string>& buildfiles, bool requireValidConfig);
 
     /// Drop analysis state derived from the active design and refresh client-side annotations.
     void invalidateAnalysesAndRefreshClient();
@@ -207,6 +248,9 @@ private:
 
     /// Every source file covered by the build, including secondary single-unit buffers.
     flat_hash_set<URI> m_buildSourceUris;
+
+    /// Explicit include selections by canonical header path, preserved across driver reloads.
+    std::unordered_map<std::filesystem::path, IncludeContextSelection> m_includeSelections;
 
     void copyOpenDocumentsFrom(const ServerDriver* oldDriver);
 

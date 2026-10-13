@@ -559,8 +559,14 @@ void CompletionDispatch::getCompletions(std::vector<lsp::CompletionItem>& result
 
     context.query->getCompletions(results, *this, doc, context);
 
-    for (auto& item : results)
+    for (auto& item : results) {
+        // Resolution is a separate request and must retain the requesting file's context. Symbols
+        // that came out of the current analysis already carry their own data, which resolves the
+        // item against the buffer it was built from instead of the workspace index.
+        if (item.kind == lsp::CompletionItemKind::Module && !item.data)
+            item.data = std::string(doc->getURI().str());
         context.query->setCompletionEdit(item);
+    }
 
     DEBUG("Returning {} completions for {} query in {} context", results.size(),
           toString(context.query->kind()), toString(context.kind));
@@ -579,10 +585,14 @@ void CompletionDispatch::getCompletionItemResolve(lsp::CompletionItem& item,
         return;
     }
 
-    // Symbols that came out of the current analysis carry `data` and resolve against it; items
-    // from the workspace index and the built-in tables have none.
+    // Symbols that came out of the current analysis carry `data` and resolve against it; module,
+    // interface and class names from the workspace index carry the requesting document's URI so
+    // that resolve can pick the nearest declaration. Items from the built-in tables have neither.
     if (item.data) {
-        completions::MemberCompletionQuery::resolve(*this, item, ctx);
+        if (item.data->to_string())
+            completions::InstanceCompletionQuery::resolve(*this, item);
+        else
+            completions::MemberCompletionQuery::resolve(*this, item, ctx);
         return;
     }
 

@@ -11,6 +11,7 @@
 #include "Indexer.h"
 #include "completions/CompletionDispatch.h"
 #include "completions/MemberCompletions.h"
+#include "document/SlangDoc.h"
 #include "lsp/SnippetString.h"
 #include "util/Converters.h"
 #include "util/Formatting.h"
@@ -90,14 +91,15 @@ public:
     CompletionQueryKind kind() const final { return CompletionQueryKind::InstantiationSuffix; }
 
     void getCompletions(std::vector<lsp::CompletionItem>& results, CompletionDispatch& dispatch,
-                        const std::shared_ptr<SlangDoc>&, const CompletionContext&) const final {
+                        const std::shared_ptr<SlangDoc>& doc,
+                        const CompletionContext&) const final {
         if (!moduleToken) {
             WARN("No module token found before instantiation suffix");
             return;
         }
 
         auto name = moduleToken->valueText();
-        auto symbolLoc = getIndexer(dispatch).getFirstSymbolLoc(name);
+        auto symbolLoc = getIndexer(dispatch).getNearestSymbolLoc(name, doc->getURI().getPath());
         if (!symbolLoc) {
             ERROR("No module found for {}", name);
             return;
@@ -292,14 +294,16 @@ void InstanceCompletionQuery::resolve(CompletionDispatch& dispatch, lsp::Complet
                                       bool excludeName) {
     auto name = item.label;
     if (!modulePath) {
-        auto files = getIndexer(dispatch).getFilesForSymbol(name);
-        if (files.empty()) {
-            WARN("No files found for module {}", name);
+        if (!item.data)
             return;
-        }
-        if (files.size() > 1)
-            WARN("Multiple files found for module {}: {}", name, rfl::json::write(files));
-        modulePath = files[0];
+        auto documentUri = item.data->to_string();
+        if (!documentUri)
+            return;
+        auto symbolLoc = getIndexer(dispatch).getNearestSymbolLoc(name,
+                                                                  URI(*documentUri).getPath());
+        if (!symbolLoc)
+            return;
+        modulePath = *symbolLoc->uri;
     }
 
     auto maybeTree = syntax::SyntaxTree::fromFile(modulePath->string(), getSourceManager(dispatch),
@@ -310,6 +314,7 @@ void InstanceCompletionQuery::resolve(CompletionDispatch& dispatch, lsp::Complet
     }
 
     resolve(*maybeTree.value(), name, item, excludeName);
+    item.data.reset();
     updateCompletionEditText(item);
 }
 

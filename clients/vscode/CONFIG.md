@@ -44,6 +44,8 @@
 
 - `slang.path`: path
 
+  Run "slang: Restart Language Server" to apply changes to the server path.
+
   Platform Defaults:
 
     linux:   `slang-server`
@@ -54,8 +56,8 @@
 
 - `slang.args`: array = []
 
-  Arguments to pass to the slang-server. These are different from slang flags; for those open `.slang/server.json`
+  Arguments to pass to the slang-server. These are different from slang flags; for those open `.slang/server.json`. Run "slang: Restart Language Server" to apply changes.
 
 - `slang.debugArgs`: array = []
 
-  Arguments to pass to slang-server when debugging
+  Arguments to pass to slang-server when debugging. Run "slang: Restart Language Server" to apply changes.
