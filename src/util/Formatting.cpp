@@ -380,50 +380,28 @@ size_t countNewlines(const parsing::Token& token) {
     return count;
 }
 
-/// Whether a line break comes before the token, ie. the token is the first thing on its line.
-bool beginsLine(const parsing::Token& token) {
-    for (const auto& trivia : token.trivia()) {
-        if (trivia.kind == parsing::TriviaKind::EndOfLine)
+/// Whether the node only wraps a declaration to carry a qualifier in front of it:
+/// `virtual function f();` is a `ClassMethodDeclaration` around the declaration hover renders,
+/// `local logic x;` a `ClassPropertyDeclaration`, `localparam int x = 1;` a
+/// `ParameterDeclarationStatement`. Their comment sits above the qualifier, ie. on the wrapper's
+/// first token rather than the declaration's own, so the climb has to reach them.
+///
+/// Containers are deliberately absent. A generate block or a region holds members of its own,
+/// and its first token (`begin`, `generate`) is a word like a qualifier is, so no amount of
+/// looking at tokens tells it apart from a wrapper - the reverse has to be listed instead.
+bool isQualifierWrapper(syntax::SyntaxKind kind) {
+    switch (kind) {
+        case syntax::SyntaxKind::ClassMethodDeclaration:
+        case syntax::SyntaxKind::ClassPropertyDeclaration:
+        case syntax::SyntaxKind::ParameterDeclarationStatement:
             return true;
+        default:
+            return false;
     }
-    return false;
 }
 
-/// Whether the token is a word: a keyword or qualifier, rather than punctuation such as a
-/// separator. `(` and `,` are how a list says the declaration is one of its own items.
-bool isWordToken(const parsing::Token& token) {
-    const auto text = token.rawText();
-    return !text.empty() && (std::isalpha(static_cast<unsigned char>(text[0])) || text[0] == '_');
-}
-
-/// Whether everything the parent holds in front of `child` is a qualifier of that child.
-/// Attributes are skipped, but any other node, or punctuation such as a `;` or a list
-/// separator, means the parent is a list or a statement that owns the child rather than a
-/// wrapper around it.
-bool hasOnlyQualifiersBefore(const syntax::SyntaxNode& parent, const syntax::SyntaxNode& child) {
-    for (size_t i = 0; i < parent.getChildCount(); i++) {
-        if (parent.childNode(i) == &child)
-            return true;
-
-        if (const auto* node = parent.childNode(i)) {
-            if (!syntax::AttributeInstanceSyntax::isKind(node->kind))
-                return false;
-            continue;
-        }
-        if (auto token = parent.childToken(i); token.kind != parsing::TokenKind::Unknown) {
-            if (!isWordToken(token))
-                return false;
-        }
-    }
-
-    // The child is not one of the parent's own children, so there is no wrapper to find.
-    return false;
-}
-
-/// The outermost node that makes up the declaration `node` starts. A declaration can be
-/// wrapped in a node that carries a qualifier in front of it (`virtual function`,
-/// `local logic`, `localparam`), and the comment above the declaration hangs off the wrapper's
-/// first token rather than the declaration's own, so the climb has to reach it.
+/// The outermost node that makes up the declaration `node` starts: one that starts at the same
+/// token, or the wrapper a qualifier sits on (see `isQualifierWrapper`).
 const syntax::SyntaxNode& getDeclarationElement(const syntax::SyntaxNode& node) {
     const syntax::SyntaxNode* current = &node;
     // The file root is not a declaration element: stopping there would leave the node with
@@ -432,15 +410,7 @@ const syntax::SyntaxNode& getDeclarationElement(const syntax::SyntaxNode& node) 
         const syntax::SyntaxNode& parent = *current->parent;
         const bool sameStart = parent.getFirstToken().location() ==
                                current->getFirstToken().location();
-        // Only a wrapper in front of the declaration on its own line is a wrapper of it: a
-        // declaration that starts its line has whatever the parent holds in front of it
-        // belonging to the parent (the keyword of a generate block or region, the members
-        // before it in a list), and a statement holds declarations of its own (a block, a
-        // loop initializer).
-        const bool wrapped = !sameStart && !beginsLine(current->getFirstToken()) &&
-                             !syntax::StatementSyntax::isKind(parent.kind) &&
-                             hasOnlyQualifiersBefore(parent, *current);
-        if (!sameStart && !wrapped)
+        if (!sameStart && !isQualifierWrapper(parent.kind))
             break;
 
         current = &parent;

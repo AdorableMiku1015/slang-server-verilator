@@ -189,17 +189,19 @@ hover `vf` 的注释段是空的（`static function`、`local function`、`local
 
 根因在 `getDeclarationElement` 的旧规则「取首个 token 与该节点相同的、最外层的祖先」。slang 把限定符放在包装节点上（`ClassMethodDeclaration('virtual')`、`ClassPropertyDeclaration('local')`），而 hover 渲染的是内层声明（`FunctionDeclaration('function')`）。两者首个 token 不同 → 上爬停在内层声明 → 而**注释挂在包装节点的首 token（`virtual`）上**，内层声明的 trivia 里只有空格，于是注释永远看不到。
 
-**Design** — 上爬除了「首 token 相同」，还接受「只带限定符的包装节点」。判定为**三条同时成立**（`S2.3` 里描述旧规则的句子同步改成这里的说法）：
+**Design** — 上爬除了「首 token 相同」，还接受**只带限定符的包装节点**；包装节点按 kind **显式列举**（`S2.3` 里描述旧规则的句子同步改成这里的说法）：
 
-1. 声明**不在自己那一行的行首**（首个 token 的 leading trivia 里没有换行）：限定符与声明在同一行，`virtual function ...`、`(* keep *) function ...`、`localparam int x` 都如此。声明若自成一行的行首，它前面那些东西属于外层构造（generate 块的 `begin`、region 的 `generate`、列表里排在它前面的成员），不是它的限定符。
-2. 父节点**不是语句**：`begin ... end`、`for` 初始化里的声明有自己的所有者，不是包装节点。
-3. 父节点在它前面**只有限定符**：允许属性实例（`(* ... *)`）与「词」形式的 token（关键字/限定符，判定为 token 原文首字符是字母或 `_`），出现别的子节点或标点（`;`、`,`、`(`）就说明父节点是列表或容器，声明只是它的一个条目——这一条挡住单行 `module one_liner; logic inline_member; endmodule`、类的首个成员、端口列表里的端口。
+- `ClassMethodDeclaration`：`virtual` / `static` / `local` / `protected` 限定的 function、task；
+- `ClassPropertyDeclaration`：`local` / `rand` / `randc` / `const` 等限定的属性；
+- `ParameterDeclarationStatement`：`localparam` / `parameter`。
 
-上爬结果只影响**注释块**（`findCommentBlock` 的起点）与组头继承的起点；`S2.2` 的行尾注释、`S2.3` 的行距判定不变。
+不用「父节点不是语句、前面只有限定符」这类启发式，是因为它分不开包装节点与容器：无名 generate 块与 region 的首 token（`begin`、`generate`）和限定符一样是个「词」，而它们本身也是 `MemberSyntax`，「不是语句」拦不住。一行写法（`if (1) begin /* doc */ logic x; end`、`generate logic w; endgenerate`）下声明不在行首，启发式会把容器当成包装节点，结果是成员自己的注释被丢掉、容器的注释被算到成员头上。显式列举之后这些形状根本不会被上爬触及。定位抓手是实测出来的形态差异：具名块 `begin : n` 因为多了 `:` 而不受影响。
 
-**已实测的边界**（都有回归用例）：`if (1) begin` / `else begin` / `for (genvar ...) begin` / `generate ... endgenerate` 里的声明取自己的注释，块与 region 的注释不会算到成员头上，也不会因为块是 `MemberSyntax` 而被当成包装节点；具名 generate 块（`begin : named`）同样正确。
+上爬结果只影响**注释块**（`findCommentBlock` 的起点）与组头继承的起点；`S2.2` 的行尾注释、`S2.3` 的行距判定不变。限定符与声明**不在同一行**也不影响取到注释。
 
-**Out of scope** — 属性**独占一行**时（`(* keep *)` 换行后 `function void f();`）注释仍取不到：声明不在限定符那一行，第 1 条判定不成立。取到它会与「声明自成一行的行首不上爬」这条保护端口列表的判定冲突，故保留为已知限制。函数/任务等未被 `selectDisplayNode` 换成头部的多行声明，在**声明头那一行**的行尾注释仍不显示（`S3` 已记录）；`raw` 模式不变。
+**已实测的边界**（都有回归用例）：`if (1) begin` / `else begin` / `for (genvar ...) begin` / `generate ... endgenerate`（含 region 内的具名块）里的声明各取自己的注释，容器的注释不会算到成员头上；一行的 `begin /* doc */ logic x; end` 与 `generate logic w; endgenerate` 同样各归各的；`(* keep *)` 或 `virtual` 独占一行时注释照样取到；单行 `module one_liner; logic inline_member; endmodule`、类首成员、端口列表里的端口、语句块不受影响。
+
+**Out of scope / 代价** — 显式列举是闭集合：slang 新增一种限定符包装节点时这里要补一条，否则该声明的注释不显示（不会出现错误归属）。函数/任务等未被 `selectDisplayNode` 换成头部的多行声明，在**声明头那一行**的行尾注释仍不显示（`S3` 已记录）；`raw` 模式不变。
 
 ## Tasks
 
@@ -210,6 +212,6 @@ hover `vf` 的注释段是空的（`static function`、`local function`、`local
 - [x] T5: 构建 + 全量测试 — 验收：`cmake --build build/win64-release --target server_unittests && build/win64-release/bin/server_unittests.exe` 全绿（covers: S2.2, S2.3, S2.5）
 - [ ] T6: 相邻性判定 — `src/util/Formatting.cpp` 的 `findLeadingDocCommentStart` 在反向扫描中要求注释块与声明之间只有一个换行 — 验收：`/// Doc for a.` + 空行 + `logic a;` 的 hover 不再出现 `Doc for a.`，而 `/// Doc for a.` 直接相邻时仍出现（covers: S4.1）
 - [ ] T7: 回归测试 — `tests/cpp/HoverTests.cpp` 覆盖行注释与块注释两种写法、组头继承不跨空行、上方空行不误伤 — 验收：全量 `server_unittests` 全绿且 golden 无意外变动（covers: S4.1；depends: T6）
-- [ ] T8: 限定符包装节点的上爬 — `getDeclarationElement` 接受「不在行首 + 父节点不是语句 + 父节点前面只有限定符」的包装节点 — 验收：`virtual function`、`static function`、`local function`、`local logic`、`rand int`、`(* keep *) function`、`localparam` 的 hover 都显示各自的注释（covers: S4.2）
-- [ ] T9: 上爬边界回归测试 — 单行 module/类首成员/端口列表/语句块/无名 `if`-`else` 与 `for` generate 块/`generate` region 都不得把外层注释算进来，也不得丢掉自己的注释 — 验收：全量 `server_unittests` 全绿（covers: S4.2；depends: T8）
+- [ ] T8: 限定符包装节点的上爬 — `getDeclarationElement` 接受按 kind 列举的限定符包装节点（`ClassMethodDeclaration` / `ClassPropertyDeclaration` / `ParameterDeclarationStatement`），容器一律不上爬 — 验收：`virtual function`、`static function`、`local function`、`local logic`、`rand int`、`(* keep *) function`、`localparam` 的 hover 都显示各自的注释，`(* keep *)` 或 `virtual` 独占一行时同样显示（covers: S4.2）
+- [ ] T9: 上爬边界回归测试 — 单行 module/类首成员/端口列表/语句块/无名 `if`-`else` 与 `for` generate 块/`generate` region（含一行的 `begin /* doc */ logic x; end` 与 `generate logic w; endgenerate`）都不得把外层注释算进来，也不得丢掉自己的注释 — 验收：全量 `server_unittests` 全绿（covers: S4.2；depends: T8）
 - [ ] T10: 构建 + 全量测试 — 验收：`server_unittests` 全绿且 golden 无意外变动（covers: S4.1, S4.2；depends: T7, T9）

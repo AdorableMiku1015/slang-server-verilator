@@ -1156,25 +1156,60 @@ module top;
             logic u;
         end
     endgenerate
+
+    /// Doc for the one-line if.
+    if (1)
+        /// Doc for the one-line block.
+        begin /* Doc for inline. */ logic inline_decl; end
+
+    /// Doc for the one-line region.
+    generate logic region_decl; endgenerate
 endmodule
 )");
 
-    // A declaration inside a generate block or region starts its own line, so the comment
-    // above it belongs to it, and the comment above the block, the loop or the region does
-    // not - an unnamed block being a member of its own is not a wrapper around the member
+    // The keyword a generate block or region starts with is a word like a qualifier is, so the
+    // comment above the block, the loop or the region stays with it and never reaches a member
     for (const auto& [needle, comment] :
          {std::pair{"x;", "Doc for the generate if."}, std::pair{"y;", "Doc for the generate if."},
           std::pair{"v;", "Doc for the loop."}, std::pair{"w;", "Doc for the region."},
-          std::pair{"u;", "Doc for the region."}}) {
+          std::pair{"u;", "Doc for the region."},
+          std::pair{"inline_decl;", "Doc for the one-line if."},
+          std::pair{"inline_decl;", "Doc for the one-line block."},
+          std::pair{"region_decl;", "Doc for the one-line region."}}) {
         CAPTURE(needle);
         CHECK(hoverContentAt(doc, needle).find(comment) == std::string::npos);
     }
     for (const auto& [needle, comment] :
          {std::pair{"y;", "Doc for y."}, std::pair{"v;", "Doc for v."},
-          std::pair{"w;", "Doc for w."}, std::pair{"u;", "Doc for u."}}) {
+          std::pair{"w;", "Doc for w."}, std::pair{"u;", "Doc for u."},
+          // A declaration that shares the line with the block keyword keeps its own comment
+          std::pair{"inline_decl;", "Doc for inline."}}) {
         CAPTURE(needle);
         CHECK(hoverContentAt(doc, needle).find(comment) != std::string::npos);
     }
+}
+
+TEST_CASE("HoverDocCommentOnQualifierWrappersAcrossLines") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(
+class C;
+    /// Doc for af.
+    (* keep *)
+    function void af();
+    endfunction
+
+    /// Doc for qf.
+    virtual
+    function void qf();
+    endfunction
+endclass
+)");
+
+    // The wrapper holds the qualifier whatever line it is on, and the comment above the
+    // qualifier is the declaration's
+    CHECK(hoverContentAt(doc, "af();").find("Doc for af.") != std::string::npos);
+    CHECK(hoverContentAt(doc, "qf();").find("Doc for qf.") != std::string::npos);
 }
 
 TEST_CASE("HoverDocCommentOnPorts") {
