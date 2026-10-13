@@ -44,6 +44,73 @@ pytest tests/system/ --binary build/bin/slang-server
 
 **Neovim tests** require luarocks + busted (see `DEVELOPING.md` for setup).
 
+## Sandboxed Windows Environments
+
+Notes for running the build and tests inside a sandboxed agent session (DSH) on Windows. The
+symptoms below are confusing the first time: the test suite can pass while every compile, link or
+`git` write fails.
+
+**Test temp directory.** `server_unittests` creates its workspaces under `%TEMP%`. When the test
+process may not write there, point both variables at a directory inside the repo:
+
+```powershell
+$env:TMP="$PWD\tmp-unittests"; $env:TEMP=$env:TMP; $env:GIT_CEILING_DIRECTORIES=$PWD
+build/win64-release/bin/server_unittests.exe
+```
+
+- Do not put that directory under `build/`: the auto-configure tests protect directory *names* that
+  appear in the workspace root's ancestor chain, so a `build` ancestor turns into false failures.
+- `GIT_CEILING_DIRECTORIES` stops the indexer from treating those temp workspaces as part of this
+  git repository (it runs `git ls-files` and `git check-ignore` inside them).
+
+**Directory symlinks on Windows** need Developer Mode or an elevated token. Tests that use one as a
+fixture go through `REQUIRE_DIRECTORY_SYMLINK(target, link)` in `tests/cpp/utils/Symlinks.h`, which
+skips the test instead of failing. Use that helper for new cases, and do not `SKIP` inside a
+`SECTION`: Catch2 runs the test body once more without sections after a section skips, so the
+assertions that follow the sections then run against an unset fixture.
+
+**Integrity labels.** A `workspace-write` session makes the DSH sandbox label the workspace root
+**Low** (inheritable), and a Low-labelled executable runs at Low integrity everywhere - Windows
+takes the lower of the user and the file - so binaries built in the tree cannot write unlabelled
+(medium) paths such as `%TEMP%` when you launch them outside the sandbox. In-session commands get a
+private writable `TEMP` instead, which is why the C++ tests can pass while the shell tools cannot
+write.
+
+```powershell
+# Read the label (needs an elevated shell: reading the SACL requires SeSecurityPrivilege).
+(Get-Acl "<repo>" -Audit).Audit | Where-Object { $_.IdentityReference -match 'Mandatory' }
+
+# workspace-write: give the sandbox a writable tree. danger-full-access: back to a medium tree.
+icacls "<repo>" /setintegritylevel "(OI)(CI)Low" /T
+icacls "<repo>" /setintegritylevel "(OI)(CI)Medium" /T
+```
+
+`(OI)(CI)` is only valid on directories, so a `/T` pass relabels directories and leaves existing
+**files** as they were. Combined with a sandbox that skips its own full-tree propagation once the
+root looks labelled, that produces a mixed tree: new files can be created but existing files cannot
+be overwritten or deleted, so `cl`, `link` and `git commit` fail on `Access is denied` while the test
+suite still passes. Relabel the files without inheritance flags, or reset the root to `Medium` and
+let the sandbox re-grant. The cheap recovery is a fresh clone made while `workspace-write` is active:
+everything it creates inherits a consistent Low label and the whole toolchain works.
+
+**pnpm inside the session.** pnpm resolves its store to `<repo>\.pnpm-store\v11`, while
+`node_modules/.modules.yaml` records the user's global store. Its dependency check then treats the
+modules directory as stale and aborts with
+`ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY` before running anything. Either disable that check or
+call the tools directly:
+
+```powershell
+pnpm --config.verify-deps-before-run=false exec tsc --version
+clients/vscode/node_modules/.bin/tsc.cmd --noEmit
+```
+
+Do not reach for `CI=true` to get past the abort: that is the switch that tells pnpm to go ahead and
+purge `node_modules`, and it will rebuild the tree from the session's store.
+
+**Confined sessions also block CIM/WMI and `sh`-based helpers.** `Get-CimInstance` fails with
+"cannot access CIM resources", so inspect processes with `Get-Process`; `git submodule` commands can
+fail with `couldn't create signal pipe`, so run them outside the sandbox.
+
 ## Architecture
 
 ```
