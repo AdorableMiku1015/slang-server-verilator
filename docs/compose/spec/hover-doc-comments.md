@@ -1,9 +1,9 @@
 ---
 feature: hover-doc-comments
-status: delivered
-updated: 2026-09-28
-branch: feat/hover-doc-comments
-commits: 68f7ff1..c4f5638
+status: in-progress
+updated: 2026-10-14
+branch: custom-feats
+commits:
 ---
 
 # hover-doc-comments
@@ -146,6 +146,33 @@ base_pkg::data_width_t bus_width;
 
 实测覆盖（都有回归用例）：宏展开出来的声明（`` `DECL(mac); // mac note ``）能取到行尾注释；声明后面紧跟 `` `ifdef `` 时不会丢注释；`` `define Z 1 // width `` 那一行的注释不会被算到上一行声明头上；文件首个 token 属于某条声明时（例如文件以 `typedef` 开头）依然取得到行尾注释；模块/接口头部那一行的行尾注释会显示。
 
+## [S4] Amendment: 注释块下方隔空行时不再算作文档注释
+
+**Problem** — 声明上方的注释块与声明之间空一行时，hover 仍然把它当成该声明的文档注释。实测（`tests/cpp/HoverTests.cpp` 的探针，源码见下）hover `a` 的注释段出现 `Doc for a.`：
+
+```systemverilog
+module top;
+    /// Doc for a.
+
+    logic a;
+endmodule
+```
+
+空行说明这行注释并不属于这个声明：它多半是写给上一组声明的、或者是被留白的旧注释。函数/任务等声明同样受影响（`/// Doc for f.` + 空行 + `function void f();` 的 hover 也带出 `Doc for f.`）。
+
+根因在 `findLeadingDocCommentStart` 的反向扫描：它只在**已经见过注释之后**才把「连续两个换行」当作块结束（`lastIsNewline && lastComment`），而「注释与声明之间」的那些换行是在遇到注释**之前**走过的，于是完全没参与判断；随后那行注释还会在遇到它下方的下一个换行时被 `leadingCommentStart = lastComment` 收回来。组头继承调用的是同一个函数，所以「组头注释 + 空行 + 组内第一条声明」这种形状同样会把这个注释带给整组。
+
+**Design** — 在反向扫描里，遇到第一个注释**之前**先数换行：数到第 2 个就直接返回「没有注释块」。遇到注释之后交给原有的「块上方空行结束注释块」逻辑，两者互不干扰。
+
+- 计数只看 `EndOfLine` trivia：空行行尾的空白 trivia（缩进空格）不会把计数清零，因此 `\n\n` 与 `\n   \n` 都算空行。
+- 注释块必须与声明**直接相邻**（中间只有一行换行加空白）。
+- 块**上方**隔多少空行都不影响取到块（保持原行为，有既有用例固定）。
+- 行尾注释（`S2.2`）与组头继承的行距判定（`S2.3` 的 `countNewlines != 1`）都不改；组头继承自动受益：组内第一条声明自己的块取不到时，`findCommentBlock` 因为空行断链而停止上溯，注释因此不会泄漏给整组。
+- 块注释 `/* */` 同样适用：`BlockComment` 分支只有在计数未超限时才会被走到。
+- 文件第 0 字节处的注释块（要求注释之前有一个换行）行为不变，仍是 S1 记录的已知限制。
+
+**Out of scope** — 函数/任务等未被 `selectDisplayNode` 换成头部的多行声明，在**声明头那一行**的行尾注释仍不显示（`S3` 已记录，本次不动）；`raw` 模式不变。
+
 ## Tasks
 
 - [x] T1: 抽出注释渲染与 trivia 扫描的公共辅助（`appendCommentLine` / 首个换行前注释的抽取 / 后继 token 查找 / 上一个成员声明查找），`getDocCommentForHover` 行为不变 — 验收：全量 `server_unittests` 仍全绿（covers: S2.4）
@@ -153,3 +180,6 @@ base_pkg::data_width_t bus_width;
 - [x] T3: 组头注释继承 — 验收：组内第 2、3 条声明 hover 显示组头注释 + 自己的行尾注释；空行分隔、模块头、跨类型非成员节点都不会误继承（covers: S2.3；depends: T1, T2）
 - [x] T4: 回归测试 — 验收：`tests/cpp/HoverTests.cpp` 新增用例覆盖 T2/T3 的正例与边界（空行、宏展开声明、`plaintext` 模式、`raw` 模式不变），`--update` 后无 golden 意外变动（covers: S2.2, S2.3, S2.5；depends: T2, T3）
 - [x] T5: 构建 + 全量测试 — 验收：`cmake --build build/win64-release --target server_unittests && build/win64-release/bin/server_unittests.exe` 全绿（covers: S2.2, S2.3, S2.5）
+- [ ] T6: 相邻性判定 — `src/util/Formatting.cpp` 的 `findLeadingDocCommentStart` 在反向扫描中要求注释块与声明之间只有一个换行 — 验收：`/// Doc for a.` + 空行 + `logic a;` 的 hover 不再出现 `Doc for a.`，而 `/// Doc for a.` 直接相邻时仍出现（covers: S4）
+- [ ] T7: 回归测试 — `tests/cpp/HoverTests.cpp` 覆盖行注释与块注释两种写法、组头继承不跨空行、上方空行不误伤 — 验收：全量 `server_unittests` 全绿且 golden 无意外变动（covers: S4；depends: T6）
+- [ ] T8: 构建 + 全量测试 — 验收：`server_unittests` 全绿（covers: S4；depends: T7）

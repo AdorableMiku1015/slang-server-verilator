@@ -207,6 +207,9 @@ std::optional<std::string> getDeclaredTypeString(const ast::ValueSymbol& value) 
 
 /// Copied from `Slang::SyntaxPrinter::printLeadingComments` with minor adjustments
 /// Licensed under MIT; see external/slang/LICENSE
+///
+/// The block has to sit directly above the token: a blank line between the two says the comment
+/// belongs to whatever comes before it, and then there is no comment block to find.
 std::optional<size_t> findLeadingDocCommentStart(const syntax::SyntaxNode& node) {
     auto triviaSpan = node.getFirstToken().trivia();
     std::optional<size_t> lastComment;
@@ -214,16 +217,24 @@ std::optional<size_t> findLeadingDocCommentStart(const syntax::SyntaxNode& node)
 
     // Walk backwards through trivia until
     // - block comment
-    // - double new line after seeing a comment
+    // - double new line above the block, or between it and the token
     // This misses leading trivia at first line, although that's typically for license/file
     auto findDocBoundary = [&]() {
         bool lastIsNewline = false;
+        size_t newlinesBeforeComment = 0;
         for (size_t i = triviaSpan.size(); i > 0; --i) {
             const size_t triviaIndex = i - 1;
             const auto& trivia = triviaSpan[triviaIndex];
             switch (trivia.kind) {
                 case parsing::TriviaKind::EndOfLine:
-                    if (lastIsNewline && lastComment) {
+                    if (!lastComment) {
+                        // Only whitespace may separate the token from the block, so the second
+                        // newline below the first comment ends the search before it starts. The
+                        // count ignores whitespace, which is how a blank line can carry spaces.
+                        if (++newlinesBeforeComment > 1)
+                            return;
+                    }
+                    else if (lastIsNewline) {
                         // found a double newline after a comment, stop here
                         return;
                     }
@@ -369,17 +380,57 @@ size_t countNewlines(const parsing::Token& token) {
     return count;
 }
 
-/// The outermost node starting at the same token as `node`. A declaration can be wrapped in a
-/// statement that the hover renders separately, and it is the enclosing statement that sits in
-/// the surrounding list of declarations.
+/// Whether the token is a word: a keyword or qualifier, rather than punctuation such as a
+/// separator. `(` and `,` are how a list says the declaration is one of its own items.
+bool isWordToken(const parsing::Token& token) {
+    const auto text = token.rawText();
+    return !text.empty() && (std::isalpha(static_cast<unsigned char>(text[0])) || text[0] == '_');
+}
+
+/// Whether everything the parent holds in front of `child` is a qualifier of that child.
+/// Attributes are skipped, but any other node, or punctuation such as a `;` or a list
+/// separator, means the parent is a list or a statement that owns the child rather than a
+/// wrapper around it.
+bool hasOnlyQualifiersBefore(const syntax::SyntaxNode& parent, const syntax::SyntaxNode& child) {
+    for (size_t i = 0; i < parent.getChildCount(); i++) {
+        if (parent.childNode(i) == &child)
+            return true;
+
+        if (const auto* node = parent.childNode(i)) {
+            if (!syntax::AttributeInstanceSyntax::isKind(node->kind))
+                return false;
+            continue;
+        }
+        if (auto token = parent.childToken(i); token.kind != parsing::TokenKind::Unknown) {
+            if (!isWordToken(token))
+                return false;
+        }
+    }
+
+    // The child is not one of the parent's own children, so there is no wrapper to find.
+    return false;
+}
+
+/// The outermost node that makes up the declaration `node` starts. A declaration can be
+/// wrapped in a node that carries a qualifier in front of it (`virtual function`,
+/// `local logic`, `localparam`), and the comment above the declaration hangs off the wrapper's
+/// first token rather than the declaration's own, so the climb has to reach it.
 const syntax::SyntaxNode& getDeclarationElement(const syntax::SyntaxNode& node) {
     const syntax::SyntaxNode* current = &node;
-    const auto start = node.getFirstToken().location();
     // The file root is not a declaration element: stopping there would leave the node with
     // nothing to walk past, since a root has no parent and no siblings.
-    while (current->parent && current->parent->parent &&
-           current->parent->getFirstToken().location() == start) {
-        current = current->parent;
+    while (current->parent && current->parent->parent) {
+        const syntax::SyntaxNode& parent = *current->parent;
+        const bool sameStart = parent.getFirstToken().location() ==
+                               current->getFirstToken().location();
+        // A statement holds declarations of its own (a block, a loop initializer), so it is
+        // never the wrapper of the one being rendered.
+        const bool wrapped = !sameStart && !syntax::StatementSyntax::isKind(parent.kind) &&
+                             hasOnlyQualifiersBefore(parent, *current);
+        if (!sameStart && !wrapped)
+            break;
+
+        current = &parent;
     }
 
     return *current;

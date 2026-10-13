@@ -952,6 +952,199 @@ static void checkOrdered(const std::string& content, const std::string& first,
     CHECK(secondPos != std::string::npos);
 }
 
+TEST_CASE("HoverIgnoresDocCommentSeparatedByABlankLine") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(
+module top;
+    /// Doc for a.
+
+    logic a; // trailing a
+
+    /** Block doc for b. */
+
+    logic b; // trailing b
+
+    /// Adjacent doc for c.
+    logic c; // trailing c
+
+    /// Group header.
+
+    logic d; // trailing d
+    logic e; // trailing e
+endmodule
+)");
+
+    // A blank line between the block and the declaration means the comment documents
+    // something else, whether it is a line comment or a block comment
+    for (const auto& [needle, comment] :
+         {std::pair{"a; // trailing a", "Doc for a."},
+          std::pair{"b; // trailing b", "Block doc for b."},
+          std::pair{"d; // trailing d", "Group header."},
+          // e follows d directly, but the run back to the header crosses the blank line
+          std::pair{"e; // trailing e", "Group header."},
+          std::pair{"e; // trailing e", "Adjacent doc for c."}}) {
+        CAPTURE(needle);
+        CHECK(hoverContentAt(doc, needle).find(comment) == std::string::npos);
+    }
+
+    // The line comments of the declarations are not affected, and a block directly above
+    // the declaration is still its doc comment
+    checkOrdered(hoverContentAt(doc, "a; // trailing a"), "trailing a", "logic a;");
+    checkOrdered(hoverContentAt(doc, "b; // trailing b"), "trailing b", "logic b;");
+    checkOrdered(hoverContentAt(doc, "d; // trailing d"), "trailing d", "logic d;");
+    checkOrdered(hoverContentAt(doc, "e; // trailing e"), "trailing e", "logic e;");
+    checkOrdered(hoverContentAt(doc, "c; // trailing c"), "Adjacent doc for c.", "trailing c");
+}
+
+TEST_CASE("HoverKeepsDocCommentWithBlankLinesAbove") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(
+module top;
+    logic before;
+
+
+    /// Doc for a.
+    logic a;
+endmodule
+)");
+
+    // Only the gap below the block matters, so blank lines above it leave it alone
+    checkOrdered(hoverContentAt(doc, "a;"), "Doc for a.", "logic a;");
+}
+
+TEST_CASE("HoverIgnoresDocCommentSeparatedByABlankLineBeforeAFunction") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(
+class C;
+    /// Doc for f.
+
+    function void f(); // trailing f
+    endfunction
+endclass
+)");
+
+    auto content = hoverContentAt(doc, "f(); // trailing f");
+    CHECK(content.find("Doc for f.") == std::string::npos);
+    checkOrdered(content, "function void f();", "endfunction");
+}
+
+TEST_CASE("HoverDocCommentOnQualifiedDeclarations") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(
+class C;
+    /// Doc for vf.
+    virtual function void vf();
+    endfunction
+
+    /// Doc for sf.
+    static function void sf();
+    endfunction
+
+    /// Doc for lf.
+    local function void lf();
+    endfunction
+
+    /// Doc for p1.
+    local logic p1;
+
+    /// Doc for p2.
+    rand int p2;
+
+    /// Doc for af.
+    (* keep *) function void af();
+    endfunction
+endclass
+
+module top;
+    /// Doc for param.
+    localparam int param = 1;
+
+    /// Doc for plain.
+    logic plain;
+
+    /// Doc for packed.
+    typedef logic [7:0] packed_t;
+endmodule
+)");
+
+    // The comment above a declaration hangs off the qualifier the wrapper carries, so hover
+    // has to look past the declaration itself to find it
+    for (const auto& [needle, comment] :
+         {std::pair{"vf();", "Doc for vf."}, std::pair{"sf();", "Doc for sf."},
+          std::pair{"lf();", "Doc for lf."}, std::pair{"p1;", "Doc for p1."},
+          std::pair{"p2;", "Doc for p2."}, std::pair{"af();", "Doc for af."},
+          std::pair{"param = 1", "Doc for param."}, std::pair{"plain;", "Doc for plain."},
+          std::pair{"packed_t;", "Doc for packed."}}) {
+        CAPTURE(needle);
+        CHECK(hoverContentAt(doc, needle).find(comment) != std::string::npos);
+    }
+}
+
+TEST_CASE("HoverSharedGroupDocCommentAcrossQualifiedDeclarations") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(
+class C;
+    /// Shared method docs.
+    virtual function void a();
+    endfunction
+    static function void b();
+    endfunction
+endclass
+)");
+
+    // b has no block of its own, and the run back to the header crosses no blank line
+    checkOrdered(hoverContentAt(doc, "b();"), "Shared method docs.", "function void b();");
+}
+
+TEST_CASE("HoverIgnoresDocCommentOfTheEnclosingDeclaration") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(
+/// Doc for the class.
+class C;
+    logic member;
+endclass
+
+/// Doc for the module.
+module one_liner; logic inline_member; endmodule
+
+/// Doc for the block.
+module top;
+    always_comb begin logic in_block; end
+endmodule
+)");
+
+    // The class, the module and the block document themselves, not the declaration that
+    // happens to share their line
+    CHECK(hoverContentAt(doc, "member;").find("Doc for the class.") == std::string::npos);
+    CHECK(hoverContentAt(doc, "inline_member;").find("Doc for the module.") == std::string::npos);
+    CHECK(hoverContentAt(doc, "in_block;").find("Doc for the block.") == std::string::npos);
+}
+
+TEST_CASE("HoverDocCommentOnPorts") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(
+module ports(
+    /// Doc for the first port.
+    input logic port_a,
+    /// Doc for the second port.
+    input logic port_b
+);
+endmodule
+)");
+
+    // A port is an item of the port list, not a wrapper around the port, so its own comment
+    // has to stay with it
+    CHECK(hoverContentAt(doc, "port_a,").find("Doc for the first port.") != std::string::npos);
+    CHECK(hoverContentAt(doc, "port_b").find("Doc for the second port.") != std::string::npos);
+}
+
 TEST_CASE("HoverCombinesLeadingAndTrailingComments") {
     ServerHarness server;
 
