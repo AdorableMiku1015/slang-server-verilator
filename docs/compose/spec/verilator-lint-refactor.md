@@ -192,8 +192,9 @@ export function runFailure(
 **Design** — 「外部 linter 只能读磁盘上的文件」是一条不变量，按它收口：
 
 - 新增纯模块 `clients/vscode/src/linter/lintTarget.ts`：`LintTarget { scheme, fsPath }` 与 `isLintableTarget(target, exists)` = 目标存在且 `scheme === 'file'` 且 `exists(fsPath)`。`exists` 由调用方注入（生产传 `fs.existsSync`），因此判定可以用仓库现成的 tape 覆盖，不需要真文件系统。
-- `ExternalLinter.lint()` 开头判定目标：不可用就记一行日志后直接返回，**不触碰诊断集合**——屏幕上已有的诊断因此保留，新 linter 也自动继承这条不变量。
-- `LintManager.lintTarget()` 区分两种情形：**没有目标**（`target() === undefined`，编译目标消失）仍按 S2.4 清空诊断；**目标不可 lint**（非 `file` scheme 或磁盘上不存在）跳过本轮、保留诊断并记日志。用户打开对比视图不该抹掉 Problems 面板里指向真实文件的问题。
+- `ExternalLinter.lint()` 开头判定目标：不可用就直接返回，**不触碰诊断集合**——屏幕上已有的诊断因此保留，新 linter 也自动继承这条不变量。
+- `LintManager.lintTarget()` 区分两种情形：**没有目标**（`target() === undefined`，编译目标消失）仍按 S2.4 清空诊断；**目标不可 lint**（非 `file` scheme 或磁盘上不存在）则记一行日志（`Not linting <uri>: it is not a file on disk`）后跳过本轮、保留诊断。用户打开对比视图不该抹掉 Problems 面板里指向真实文件的问题。
+- `scheme === 'file'` 与仓库其余部分一致：语言客户端的选择器 `anyVerilogSelector`（`src/utils.ts`）与外部格式化工具的 `scheme: 'file'` 都是同一个口径，所以这里没有引入新的限制。
 - 触发条件不变（编辑器切换仍按 `languageId` 触发）：判定收敛在「读取目标」这一处，避免触发时看到的文档与运行时的目标不一致。
 - 目标不存在也覆盖「文件在编辑器里打开着但已被删除/改名」的情形：工具只认路径，路径没了就不该跑。
 

@@ -93,7 +93,7 @@ hover 的注释段按顺序由两部分拼成**一段**（沿用现有的逐行�
 
 「组头注释 = 连续一组同级成员声明**最上方**那个独占一行的注释块」，因此第二条及之后的声明也能看到它。
 
-从 `getDeclarationElement(node)` 出发向上走——即先取「首个 token 与该节点相同的、最外层的祖先」，但**不爬到文件根节点**（根没有父节点也没有同级，爬上去会让后续遍历直接空转）。这样模块体里的 `localparam` 会先归位到 `ParameterDeclarationStatement`，它才是真正排在模块成员列表里的那一项，组头继承因此对参数声明同样生效。随后：
+从 `getDeclarationElement(node)` 出发向上走——先取「首个 token 与该节点相同的、最外层的祖先」，另外也接受**只带限定符、与声明同一行的包装节点**（`S4.2` 给出了三条判定），但**不爬到文件根节点**（根没有父节点也没有同级，爬上去会让后续遍历直接空转）。这样模块体里的 `localparam` 会先归位到 `ParameterDeclarationStatement`、类里的 `virtual function` 会归位到 `ClassMethodDeclaration`，它们才是真正排在成员列表里的那一项，组头继承因此对参数声明与带限定符的方法同样生效。随后：
 
 1. 该元素自己有上方注释块 → 用它，结束。
 2. 否则取「同一父节点下、紧邻的上一个成员声明」 `P`：
@@ -146,7 +146,11 @@ base_pkg::data_width_t bus_width;
 
 实测覆盖（都有回归用例）：宏展开出来的声明（`` `DECL(mac); // mac note ``）能取到行尾注释；声明后面紧跟 `` `ifdef `` 时不会丢注释；`` `define Z 1 // width `` 那一行的注释不会被算到上一行声明头上；文件首个 token 属于某条声明时（例如文件以 `typedef` 开头）依然取得到行尾注释；模块/接口头部那一行的行尾注释会显示。
 
-## [S4] Amendment: 注释块下方隔空行时不再算作文档注释
+## [S4] Amendment: 注释块要属于这个声明
+
+两条独立的缺陷，都是「hover 拿到的注释不是这个声明的」：
+
+### S4.1 注释块下方隔空行时不再算作文档注释
 
 **Problem** — 声明上方的注释块与声明之间空一行时，hover 仍然把它当成该声明的文档注释。实测（`tests/cpp/HoverTests.cpp` 的探针，源码见下）hover `a` 的注释段出现 `Doc for a.`：
 
@@ -171,7 +175,31 @@ endmodule
 - 块注释 `/* */` 同样适用：`BlockComment` 分支只有在计数未超限时才会被走到。
 - 文件第 0 字节处的注释块（要求注释之前有一个换行）行为不变，仍是 S1 记录的已知限制。
 
-**Out of scope** — 函数/任务等未被 `selectDisplayNode` 换成头部的多行声明，在**声明头那一行**的行尾注释仍不显示（`S3` 已记录，本次不动）；`raw` 模式不变。
+### S4.2 带限定符的声明也要取到注释
+
+**Problem** — `class` 里带限定符的声明取不到自己的文档注释：
+
+```systemverilog
+class C;
+    /// Doc for vf.
+    virtual function void vf();
+    endfunction
+```
+hover `vf` 的注释段是空的（`static function`、`local function`、`local logic p1;`、`rand int p2;`、`(* keep *) function` 同样）。
+
+根因在 `getDeclarationElement` 的旧规则「取首个 token 与该节点相同的、最外层的祖先」。slang 把限定符放在包装节点上（`ClassMethodDeclaration('virtual')`、`ClassPropertyDeclaration('local')`），而 hover 渲染的是内层声明（`FunctionDeclaration('function')`）。两者首个 token 不同 → 上爬停在内层声明 → 而**注释挂在包装节点的首 token（`virtual`）上**，内层声明的 trivia 里只有空格，于是注释永远看不到。
+
+**Design** — 上爬除了「首 token 相同」，还接受「只带限定符的包装节点」。判定为**三条同时成立**（`S2.3` 里描述旧规则的句子同步改成这里的说法）：
+
+1. 声明**不在自己那一行的行首**（首个 token 的 leading trivia 里没有换行）：限定符与声明在同一行，`virtual function ...`、`(* keep *) function ...`、`localparam int x` 都如此。声明若自成一行的行首，它前面那些东西属于外层构造（generate 块的 `begin`、region 的 `generate`、列表里排在它前面的成员），不是它的限定符。
+2. 父节点**不是语句**：`begin ... end`、`for` 初始化里的声明有自己的所有者，不是包装节点。
+3. 父节点在它前面**只有限定符**：允许属性实例（`(* ... *)`）与「词」形式的 token（关键字/限定符，判定为 token 原文首字符是字母或 `_`），出现别的子节点或标点（`;`、`,`、`(`）就说明父节点是列表或容器，声明只是它的一个条目——这一条挡住单行 `module one_liner; logic inline_member; endmodule`、类的首个成员、端口列表里的端口。
+
+上爬结果只影响**注释块**（`findCommentBlock` 的起点）与组头继承的起点；`S2.2` 的行尾注释、`S2.3` 的行距判定不变。
+
+**已实测的边界**（都有回归用例）：`if (1) begin` / `else begin` / `for (genvar ...) begin` / `generate ... endgenerate` 里的声明取自己的注释，块与 region 的注释不会算到成员头上，也不会因为块是 `MemberSyntax` 而被当成包装节点；具名 generate 块（`begin : named`）同样正确。
+
+**Out of scope** — 属性**独占一行**时（`(* keep *)` 换行后 `function void f();`）注释仍取不到：声明不在限定符那一行，第 1 条判定不成立。取到它会与「声明自成一行的行首不上爬」这条保护端口列表的判定冲突，故保留为已知限制。函数/任务等未被 `selectDisplayNode` 换成头部的多行声明，在**声明头那一行**的行尾注释仍不显示（`S3` 已记录）；`raw` 模式不变。
 
 ## Tasks
 
@@ -180,6 +208,8 @@ endmodule
 - [x] T3: 组头注释继承 — 验收：组内第 2、3 条声明 hover 显示组头注释 + 自己的行尾注释；空行分隔、模块头、跨类型非成员节点都不会误继承（covers: S2.3；depends: T1, T2）
 - [x] T4: 回归测试 — 验收：`tests/cpp/HoverTests.cpp` 新增用例覆盖 T2/T3 的正例与边界（空行、宏展开声明、`plaintext` 模式、`raw` 模式不变），`--update` 后无 golden 意外变动（covers: S2.2, S2.3, S2.5；depends: T2, T3）
 - [x] T5: 构建 + 全量测试 — 验收：`cmake --build build/win64-release --target server_unittests && build/win64-release/bin/server_unittests.exe` 全绿（covers: S2.2, S2.3, S2.5）
-- [ ] T6: 相邻性判定 — `src/util/Formatting.cpp` 的 `findLeadingDocCommentStart` 在反向扫描中要求注释块与声明之间只有一个换行 — 验收：`/// Doc for a.` + 空行 + `logic a;` 的 hover 不再出现 `Doc for a.`，而 `/// Doc for a.` 直接相邻时仍出现（covers: S4）
-- [ ] T7: 回归测试 — `tests/cpp/HoverTests.cpp` 覆盖行注释与块注释两种写法、组头继承不跨空行、上方空行不误伤 — 验收：全量 `server_unittests` 全绿且 golden 无意外变动（covers: S4；depends: T6）
-- [ ] T8: 构建 + 全量测试 — 验收：`server_unittests` 全绿（covers: S4；depends: T7）
+- [ ] T6: 相邻性判定 — `src/util/Formatting.cpp` 的 `findLeadingDocCommentStart` 在反向扫描中要求注释块与声明之间只有一个换行 — 验收：`/// Doc for a.` + 空行 + `logic a;` 的 hover 不再出现 `Doc for a.`，而 `/// Doc for a.` 直接相邻时仍出现（covers: S4.1）
+- [ ] T7: 回归测试 — `tests/cpp/HoverTests.cpp` 覆盖行注释与块注释两种写法、组头继承不跨空行、上方空行不误伤 — 验收：全量 `server_unittests` 全绿且 golden 无意外变动（covers: S4.1；depends: T6）
+- [ ] T8: 限定符包装节点的上爬 — `getDeclarationElement` 接受「不在行首 + 父节点不是语句 + 父节点前面只有限定符」的包装节点 — 验收：`virtual function`、`static function`、`local function`、`local logic`、`rand int`、`(* keep *) function`、`localparam` 的 hover 都显示各自的注释（covers: S4.2）
+- [ ] T9: 上爬边界回归测试 — 单行 module/类首成员/端口列表/语句块/无名 `if`-`else` 与 `for` generate 块/`generate` region 都不得把外层注释算进来，也不得丢掉自己的注释 — 验收：全量 `server_unittests` 全绿（covers: S4.2；depends: T8）
+- [ ] T10: 构建 + 全量测试 — 验收：`server_unittests` 全绿且 golden 无意外变动（covers: S4.1, S4.2；depends: T7, T9）

@@ -380,6 +380,15 @@ size_t countNewlines(const parsing::Token& token) {
     return count;
 }
 
+/// Whether a line break comes before the token, ie. the token is the first thing on its line.
+bool beginsLine(const parsing::Token& token) {
+    for (const auto& trivia : token.trivia()) {
+        if (trivia.kind == parsing::TriviaKind::EndOfLine)
+            return true;
+    }
+    return false;
+}
+
 /// Whether the token is a word: a keyword or qualifier, rather than punctuation such as a
 /// separator. `(` and `,` are how a list says the declaration is one of its own items.
 bool isWordToken(const parsing::Token& token) {
@@ -423,9 +432,13 @@ const syntax::SyntaxNode& getDeclarationElement(const syntax::SyntaxNode& node) 
         const syntax::SyntaxNode& parent = *current->parent;
         const bool sameStart = parent.getFirstToken().location() ==
                                current->getFirstToken().location();
-        // A statement holds declarations of its own (a block, a loop initializer), so it is
-        // never the wrapper of the one being rendered.
-        const bool wrapped = !sameStart && !syntax::StatementSyntax::isKind(parent.kind) &&
+        // Only a wrapper in front of the declaration on its own line is a wrapper of it: a
+        // declaration that starts its line has whatever the parent holds in front of it
+        // belonging to the parent (the keyword of a generate block or region, the members
+        // before it in a list), and a statement holds declarations of its own (a block, a
+        // loop initializer).
+        const bool wrapped = !sameStart && !beginsLine(current->getFirstToken()) &&
+                             !syntax::StatementSyntax::isKind(parent.kind) &&
                              hasOnlyQualifiersBefore(parent, *current);
         if (!sameStart && !wrapped)
             break;

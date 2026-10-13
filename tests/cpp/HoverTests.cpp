@@ -1126,6 +1126,57 @@ endmodule
     CHECK(hoverContentAt(doc, "in_block;").find("Doc for the block.") == std::string::npos);
 }
 
+TEST_CASE("HoverDocCommentInsideGenerateBlocks") {
+    ServerHarness server;
+
+    auto doc = server.openFile("test.sv", R"(
+module top;
+    /// Doc for the generate if.
+    if (1) begin
+        logic x;
+    end
+    else begin
+        /// Doc for y.
+        logic y;
+    end
+
+    /// Doc for the loop.
+    for (genvar i = 0; i < 2; i++) begin
+        /// Doc for v.
+        logic v;
+    end
+
+    /// Doc for the region.
+    generate
+        /// Doc for w.
+        logic w;
+
+        if (1) begin : named
+            /// Doc for u.
+            logic u;
+        end
+    endgenerate
+endmodule
+)");
+
+    // A declaration inside a generate block or region starts its own line, so the comment
+    // above it belongs to it, and the comment above the block, the loop or the region does
+    // not - an unnamed block being a member of its own is not a wrapper around the member
+    for (const auto& [needle, comment] :
+         {std::pair{"x;", "Doc for the generate if."}, std::pair{"y;", "Doc for the generate if."},
+          std::pair{"v;", "Doc for the loop."}, std::pair{"w;", "Doc for the region."},
+          std::pair{"u;", "Doc for the region."}}) {
+        CAPTURE(needle);
+        CHECK(hoverContentAt(doc, needle).find(comment) == std::string::npos);
+    }
+    for (const auto& [needle, comment] :
+         {std::pair{"y;", "Doc for y."}, std::pair{"v;", "Doc for v."},
+          std::pair{"w;", "Doc for w."}, std::pair{"u;", "Doc for u."}}) {
+        CAPTURE(needle);
+        CHECK(hoverContentAt(doc, needle).find(comment) != std::string::npos);
+    }
+}
+
 TEST_CASE("HoverDocCommentOnPorts") {
     ServerHarness server;
 
