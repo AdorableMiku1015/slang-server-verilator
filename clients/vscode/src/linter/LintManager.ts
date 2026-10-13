@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MIT
+import * as fs from 'fs'
 import * as path from 'path'
 import * as vscode from 'vscode'
 import { ConfigObject, ExtensionComponent } from '../lib/libconfig'
 import { getWorkspaceFolder, isAnyVerilog } from '../utils'
 import { ExternalLinter } from './ExternalLinter'
+import { isLintableTarget } from './lintTarget'
 import { VerilatorLinter } from './VerilatorLinter'
 
 /// Triggers arrive in bursts, and the tools are being run over a whole compilation,
@@ -127,6 +129,15 @@ export class LintManager extends ExtensionComponent {
       for (const linter of this.linters) {
         linter.clearAll()
       }
+      return
+    }
+
+    if (!isLintableTarget(target, fs.existsSync)) {
+      // A target that is not a file on disk (a diff of a historical revision, an unsaved
+      // buffer, a deleted file) is not something the tools can run over, so this round is
+      // skipped. Whatever the editor shows now, the compilation has not changed, so the
+      // diagnostics of the files that were linted still stand.
+      this.logger.info(`Not linting ${target.toString()}: it is not a file on disk`)
       return
     }
 

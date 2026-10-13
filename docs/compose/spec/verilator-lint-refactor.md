@@ -1,9 +1,9 @@
 ---
 feature: verilator-lint-refactor
-status: delivered
-updated: 2026-02-01
-branch: refactor/verilator-lint
-commits: 26e4e8c..ca5f1ee
+status: in-progress
+updated: 2026-10-14
+branch: custom-feats
+commits:
 ---
 
 # verilator-lint-refactor
@@ -183,6 +183,22 @@ export function runFailure(
 - 工具把诊断写到 stdout 的情形（verilator 不这样）不特殊对待。
 - 不修 `extension.ts:270` 的 `no-misused-promises`：它在 HEAD 上就存在，属 `slang/internalError` 通知处理，不是本次范围。
 
+## [S4] Amendment: 只有磁盘上的真实文件才是 lint 目标
+
+**Problem** — 用 Git Graph 打开两个历史版本的差异编辑器时，VS Code 给出的文档 URI 是 `git-graph:` 而不是 `file:`，`uri.fsPath` 退化成形如 `\file.sv` 的路径（用户实测的显示形态）。`LintManager` 的触发只按 `languageId` 判断（`isAnyVerilog`），于是这个文档就成了 lint 目标；verilator 拿到不存在的路径后不产生任何可定位诊断，于是 `runFailure` 按「非零退出且没有可定位诊断」判为运行失败 → 日志 `verilator lint failed` 加一次性错误提示，而且这一轮结果不落地（屏幕上的旧诊断原样留着）。用户看到的是「看一眼 diff 就弹 lint 失败」。
+
+这也与扩展其余部分的口径不一致：verilog 的选择器 `anyVerilogSelector` 本来就是 `scheme: 'file'`，语言服务器根本不会附着到这类文档上，只有 lint 触发漏了这层过滤。
+
+**Design** — 「外部 linter 只能读磁盘上的文件」是一条不变量，按它收口：
+
+- 新增纯模块 `clients/vscode/src/linter/lintTarget.ts`：`LintTarget { scheme, fsPath }` 与 `isLintableTarget(target, exists)` = 目标存在且 `scheme === 'file'` 且 `exists(fsPath)`。`exists` 由调用方注入（生产传 `fs.existsSync`），因此判定可以用仓库现成的 tape 覆盖，不需要真文件系统。
+- `ExternalLinter.lint()` 开头判定目标：不可用就记一行日志后直接返回，**不触碰诊断集合**——屏幕上已有的诊断因此保留，新 linter 也自动继承这条不变量。
+- `LintManager.lintTarget()` 区分两种情形：**没有目标**（`target() === undefined`，编译目标消失）仍按 S2.4 清空诊断；**目标不可 lint**（非 `file` scheme 或磁盘上不存在）跳过本轮、保留诊断并记日志。用户打开对比视图不该抹掉 Problems 面板里指向真实文件的问题。
+- 触发条件不变（编辑器切换仍按 `languageId` 触发）：判定收敛在「读取目标」这一处，避免触发时看到的文档与运行时的目标不一致。
+- 目标不存在也覆盖「文件在编辑器里打开着但已被删除/改名」的情形：工具只认路径，路径没了就不该跑。
+
+**Out of scope** — 不把 `git-graph:` 之类的 URI 反解成真实文件后照常 lint（对比视图显示的是历史版本，而 lint 只会读磁盘上的当前内容，诊断会张冠李戴）；不新增或改动设置项；不改 `S2.5` 的诊断落地与 `S2.7` 的失败判定规则。
+
 ## Tasks
 
 - [x] T1: 抽出纯解析模块并补单测 — 新增 `verilatorOutput.ts`/`lintOutput.ts` 与 `test/unit/verilatorOutput.test.ts`；验收：`tape` 通过，覆盖 S2.6 与 S2.9 列出的输出形态 (covers: S2.6, S2.9)
@@ -192,3 +208,5 @@ export function runFailure(
 - [x] T5: 同步文档并全量验证 — 更新 `clients/vscode/CONFIG.md` 与 `docs/features/features.md`；验收：文档与实际生成形态一致，`tsc`、`tape` 绿，`eslint` 仅剩预存在的 `extension.ts:270` (covers: S2.2)
 - [x] T7: 用真实 verilator 核对参数构造、进程执行、解析、分组与判定 — 复刻 `ExternalLinter` 的运行路径（只缺 vscode）跑 `C:\verilator\verilator_bin.exe` v5.050：退出码语义、stderr 归属、类别/行列/标记长度、注释行与描述行、include 头文件归属、绝对与相对（含反斜杠）路径、带空格路径与参数、目标文件缺失，全部与实现一致；真实输出已固化为回归用例 (depends: T2, T4)
 - [ ] T8: 在扩展宿主（装了 verilator 的 VS Code）里确认触发与提示行为：保存/切换编辑器/设置 top level 各触发一次、去抖合并、运行期间的新请求在结束后重跑、无 verilator 时只提示一次、诊断落在 Problems 面板的正确文件 — 本机没有可运行的扩展宿主测试装置 (`integration/runTest.ts` 需要下载 VS Code)
+- [ ] T9: 目标判定纯模块 + 单测 — `lintTarget.ts` 与 `test/unit/lintTarget.test.ts`：非 `file` scheme（`git-graph:`、`untitled:`）、路径不存在、没有目标、正常文件 — 验收：`tape` 全绿 (covers: S4)
+- [ ] T10: 接入 `ExternalLinter` 与 `LintManager` — 不可 lint 时跳过并保留诊断（只有「没有编译目标」才清空），且记一行日志 — 验收：`tsc --noEmit`、`eslint src --ext ts`、`tape` 全绿；`git-graph:` 文档不会再成为 lint 目标 (covers: S4; depends: T9)

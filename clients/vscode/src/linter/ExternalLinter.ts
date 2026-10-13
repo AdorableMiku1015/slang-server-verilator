@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import * as child_process from 'child_process'
+import * as fs from 'fs'
 import * as vscode from 'vscode'
 import { parseArgsStringToArgv } from 'string-argv'
 import { ConfigObject, ExtensionComponent } from '../lib/libconfig'
@@ -11,6 +12,7 @@ import {
   LinterSeverity,
   LocatedFinding,
 } from './lintOutput'
+import { isLintableTarget } from './lintTarget'
 import { ProcessError, runFailure } from './runFailure'
 import { ExpansionContext, expandVariables } from './variableExpansion'
 
@@ -89,6 +91,14 @@ export abstract class ExternalLinter extends ExtensionComponent {
   /// first one when it is in none of them, and undefined only when no folder is open.
   async lint(target: vscode.Uri, cwd: string, workspaceFolder?: string): Promise<void> {
     if (!this.enabled.getValue()) {
+      return
+    }
+
+    if (!isLintableTarget(target, fs.existsSync)) {
+      // The tool is handed a path and reads it itself, so a target that is not a file on
+      // disk has nothing to run over: an editor showing a historical revision, an unsaved
+      // buffer, a file that has been deleted since. Nothing is reported either way, so the
+      // diagnostics of the files that were linted stay where they are.
       return
     }
 
