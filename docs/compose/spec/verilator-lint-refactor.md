@@ -1,9 +1,9 @@
 ---
 feature: verilator-lint-refactor
-status: in-progress
+status: delivered
 updated: 2026-10-14
 branch: custom-feats
-commits:
+commits: f470924..655a54c
 ---
 
 # verilator-lint-refactor
@@ -41,6 +41,41 @@ commits:
 - 真机跑 verilator 才发现两件猜不出来的事：诊断的 `: ... note: In instance` 注释行在**源码片段之前**（不是之后），以及 include 头文件的路径是相对**进程 cwd** 打印的——前者决定了标记扫描必须扫到下一条诊断为止，后者正是「按 cwd 解析」这条修正的实证。三份真实输出已固化为回归用例。
 - `lib/runner.ts` 的 `ToggleToolConfig` 看起来正好可用，但继承会把无意义的 `runAtLocation` 设置项带进配置树，且它的 `args` 是单个字符串、与既有数组键不兼容；改为组合 `PathConfigObject`/`ConfigObject` 原语，`runner.ts` 本身（main 上的死代码）不动。
 - 三轮独立复审：初版两个 critical（异常终止被当成成功、运行期没有异常保护）与随后的中等问题均已修掉，判定链最后收敛成一个可测的纯函数；同时决定不恢复旧实现「关闭文档就清诊断」的行为——下一轮运行会按已上报文件集合清掉它，而关掉标签页时立刻抹掉尚未修好的问题更糟。
+
+**What was built** — verilator 外部 lint 按本仓库 VS Code 客户端的约定重写了一遍。配置树收敛为 `slang.lint.*`：`slang.lint.enabled` 保留（语言服务器自身诊断的开关），外部 linter 的 `enabled`/`path`/`args` 从泄漏了内部类名的 `slang.lintManager.verilator.*` 搬到 `slang.lint.verilator.*`，`path` 改用 `PathConfigObject`（平台默认值、`which` 解析、存在性校验），`args` 每个元素经 `parseArgsStringToArgv` 解析后展平，于是既能写 `["--top-module", "foo"]` 也能写 `["--top-module foo"]` 或在其中加引号。`package.json` 与 `CONFIG.md` 已改成 Extdev 生成器会产出的键与顺序。
+
+代码结构换成 `LintManager`（组件 `lint`：触发时机、目标选择、编排）+ `ExternalLinter`（外部 linter 的配置、进程执行、诊断落地）+ `VerilatorLinter`（只提供参数与输出解析）+ 四个不依赖 `vscode` 的纯模块（`lintOutput.ts` 汇总类型与按文件分组、`verilatorOutput.ts` 解析 verilator 输出、`runFailure.ts` 判定一次运行是否可用、`lintTarget.ts` 判定目标能不能跑）。`ProjectComponent` 新增 `onDidChangeCompilationSource` 事件并把 `compilationSource` 的赋值收敛到一处，`LintManager` 通过结构接口订阅它，双方不再互相通过全局 `ext` 调用；`extension.ts` 里内联的 `LintComponent` 删除。
+
+行为上修掉了移植版的若干缺陷：诊断按「本 linter 上次上报过的文件」增量清理而不是整表清空；诊断里的相对路径按本次运行的 cwd 解析；caret 行的长度扫描到下一个 `%` 诊断为止，不再用固定 3 行窗口；目标为 `.sv`/`.svh` 时加 `-sv`（按扩展名判断，不要求文件已打开）；触发去抖 300ms、运行期间的新请求在结束后重跑一次；非零退出只有在「解析出至少一条可定位诊断」时才视为工具正常报告，崩溃状态、信号终止、超时、启动失败、输出撑爆缓冲都算失败，失败时保留上一轮诊断并提示一次。
+
+外部 linter 后来只对**磁盘上真实存在的文件**跑（S4）：目标必须是 `file:` scheme 且路径存在，判定就是纯模块 `lintTarget.ts` 的 `isLintableTarget(target, exists)`（`exists` 由调用方注入，生产传 `fs.existsSync`）。`ExternalLinter.lint()` 在启动工具之前拒绝不可 lint 的目标，并且**不触碰诊断集合**；`LintManager` 记一行 `Not linting <uri>: it is not a file on disk` 后跳过本轮，只有「完全没有编译目标」（`target() === undefined`）才按 S2.4 清空诊断。于是 Git Graph 的历史版本对比视图（`git-graph:`，`fsPath` 退化成 `\file.sv`）、未保存的 `untitled:` 缓冲区、磁盘上已被删除的文件都不再让 verilator 白跑并弹出 lint 失败提示；`scheme === 'file'` 与仓库其余部分同口径（语言客户端选择器 `anyVerilogSelector`、`ExternalFormatter` 都只选 `scheme: 'file'`）。
+
+**Verification**
+
+本轮（S4 目标判定）：
+
+- `node_modules/.bin/tsc.CMD --noEmit`（clients/vscode）：PASS，0 error
+- `node_modules/.bin/eslint.CMD src --ext ts`：PASS，0 problem
+- `node_modules/.bin/tsc.CMD -p . --outDir out` + `node_modules/.bin/tape.CMD "out/test/**/*.js"`：PASS — **282/282**（首轮交付时为 273；新增 `lintTarget.test.ts` 9 条断言：`git-graph:`/`untitled:`/`git:` 三种 scheme、路径不存在、没有目标、正常文件，以及「非 file scheme 根本不去碰文件系统」的抛异常桩）
+- 接线（`ExternalLinter`/`LintManager` 里的判定与日志）依赖 `vscode`，与仓库现状一致不做单测（S2.9）；`lint()` 只有一个调用点，且交给工具的路径与判定用的是同一个 `target.fsPath`
+- 独立复审：目标判定这一半通过
+- **未验证**：扩展宿主内真开一个 Git Graph 对比视图确认不再弹提示、Problems 面板里的旧诊断确实留着 —— 本机没有可运行的扩展宿主测试装置（`integration/runTest.ts` 需要下载 VS Code）
+
+首次交付（S2 重构）当时的证据：
+
+- `npx tsc -p . --outDir out`：PASS；`npx tape "out/test/**/*.js"`：PASS 169/169
+- `npx eslint src --ext ts`：FAIL，唯一一条 `src/extension.ts:270` `@typescript-eslint/no-misused-promises` — **PRE-EXISTING**（对 `git show HEAD:` 的原始文件跑同一命令得到同一条），与本次改动无关
+- `pnpm run check-types`：`gen-types` 步骤失败 — **PRE-EXISTING**（`clients/vscode/pnpm-workspace.yaml` 没有 `packages:`），类型检查由上面的 tsc 覆盖
+- prettier / pre-commit 本机未安装，格式按 `.prettierrc` 手工对齐（2 空格、单引号、无分号、100 列、es5 尾逗号）
+- 真实 verilator 逐条实测（`C:\verilator\verilator_bin.exe`，v5.050-284-gd1e21df9b，MSYS2 构建；脚本复刻 `ExternalLinter` 的参数构造、`execFile` 选项、解析与判定，只缺 `vscode` 层）：诊断全部走 stderr；干净文件退出 0、有告警/错误退出 1；类别与行列、标记长度 1/8/10/9 与真实输出逐条一致，`: ... note: In instance` 在源码片段之前、描述行与 `lint_off` 在其后都不产生多余 finding，`Exiting due to N warning(s)` 汇总行丢弃；include 场景诊断归属到头文件而 `In file included from` 不被当成新诊断；绝对路径与相对路径（含反斜杠形式）都按运行 cwd 解析；含空格的路径与参数作为单个 argv 正常传入；目标文件不存在时是「无位置消息 → 判为不可用运行 → 保留上一轮诊断」（S4 之后这类目标根本不会被交给工具）
+
+**Journey log**
+
+- 移植版的 caret 行长度是 `pline.length - pline.indexOf('^')`，取到的那一行常常不是 caret 行（`indexOf` 返回 -1），于是 33、8 这样的垃圾长度被写进诊断；差分脚本给出了前后对照，测试把「找不到标记就回退为 1」固定下来。
+- 复查指出只按 `signal` 判断崩溃不够：Windows 的访问违例是「数值 code + signal null」，光看信号抓不到。`runFailure()` 因此引入 `0x80000000` 下限，并且只有在解析出至少一条可定位诊断时才承认非零退出是「工具报告了问题」。
+- 真机跑 verilator 才发现两件猜不出来的事：诊断的 `: ... note: In instance` 注释行在**源码片段之前**（不是之后），以及 include 头文件的路径是相对**进程 cwd** 打印的——前者决定了标记扫描必须扫到下一条诊断为止，后者正是「按 cwd 解析」这条修正的实证。三份真实输出已固化为回归用例。
+- `lib/runner.ts` 的 `ToggleToolConfig` 看起来正好可用，但继承会把无意义的 `runAtLocation` 设置项带进配置树，且它的 `args` 是单个字符串、与既有数组键不兼容；改为组合 `PathConfigObject`/`ConfigObject` 原语，`runner.ts` 本身（main 上的死代码）不动。
+- 「目标不是磁盘上的文件」不能按「没有目标」处理：后者会清空诊断，而用户只是打开了一个对比视图，Problems 面板里指向真实文件的问题不该被抹掉。判定因此收敛到基类 `lint()`（「工具只能读磁盘上的文件」这条不变量），`LintManager` 只负责区分这两种情形并记日志。
 
 ## [S1] Problem
 
@@ -209,5 +244,6 @@ export function runFailure(
 - [x] T5: 同步文档并全量验证 — 更新 `clients/vscode/CONFIG.md` 与 `docs/features/features.md`；验收：文档与实际生成形态一致，`tsc`、`tape` 绿，`eslint` 仅剩预存在的 `extension.ts:270` (covers: S2.2)
 - [x] T7: 用真实 verilator 核对参数构造、进程执行、解析、分组与判定 — 复刻 `ExternalLinter` 的运行路径（只缺 vscode）跑 `C:\verilator\verilator_bin.exe` v5.050：退出码语义、stderr 归属、类别/行列/标记长度、注释行与描述行、include 头文件归属、绝对与相对（含反斜杠）路径、带空格路径与参数、目标文件缺失，全部与实现一致；真实输出已固化为回归用例 (depends: T2, T4)
 - [ ] T8: 在扩展宿主（装了 verilator 的 VS Code）里确认触发与提示行为：保存/切换编辑器/设置 top level 各触发一次、去抖合并、运行期间的新请求在结束后重跑、无 verilator 时只提示一次、诊断落在 Problems 面板的正确文件 — 本机没有可运行的扩展宿主测试装置 (`integration/runTest.ts` 需要下载 VS Code)
-- [ ] T9: 目标判定纯模块 + 单测 — `lintTarget.ts` 与 `test/unit/lintTarget.test.ts`：非 `file` scheme（`git-graph:`、`untitled:`）、路径不存在、没有目标、正常文件 — 验收：`tape` 全绿 (covers: S4)
-- [ ] T10: 接入 `ExternalLinter` 与 `LintManager` — 不可 lint 时跳过并保留诊断（只有「没有编译目标」才清空），且记一行日志 — 验收：`tsc --noEmit`、`eslint src --ext ts`、`tape` 全绿；`git-graph:` 文档不会再成为 lint 目标 (covers: S4; depends: T9)
+- [x] T9: 目标判定纯模块 + 单测 — `lintTarget.ts` 与 `test/unit/lintTarget.test.ts`：非 `file` scheme（`git-graph:`、`untitled:`）、路径不存在、没有目标、正常文件 — 验收：`tape` 全绿 (covers: S4)
+- [x] T10: 接入 `ExternalLinter` 与 `LintManager` — 不可 lint 时跳过并保留诊断（只有「没有编译目标」才清空），且记一行日志 — 验收：`tsc --noEmit`、`eslint src --ext ts`、`tape` 全绿；`git-graph:` 文档不会再成为 lint 目标 (covers: S4; depends: T9)
+

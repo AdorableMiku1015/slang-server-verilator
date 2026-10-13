@@ -1,38 +1,39 @@
 ---
 feature: hover-doc-comments
-status: in-progress
+status: delivered
 updated: 2026-10-14
 branch: custom-feats
-commits:
+commits: 64f7040..2810361
 ---
 
 # hover-doc-comments
 
 ## Report
 
-**What was built** — hover 的注释段现在由两部分拼成：声明自己的上方注释块（自己没有就退化为它所属声明组的组头注释），以及声明所在行的行尾注释；两部分都没有时照旧不输出注释段。
+**What was built** — hover 的注释段由两部分拼成：声明自己的上方注释块（自己没有就退化为同组声明的组头注释），以及声明所在行的行尾注释。本次修订把「哪段注释属于这个声明」收了两次口。
 
-行尾注释取「渲染出来的语法结束的那一行」，实现上是扫声明之后那些 token 的 leading trivia：`Directive` trivia 自带换行，上一条声明行末尾的注释其实挂在指令**自己的首个 token** 上，因此这一支先读指令首 token 同一行的注释再停止；`EndOfLine`、`DisabledText` 等一律视为行结束。因为中间可能还隔着 `ParameterDeclarationStatement` 的 `;` 或端口列表的 `,`，扫描会在同一行内继续往后走。组头继承走「同一父节点下、紧邻上一行的成员声明」，中间出现空行就断链，限定在 `syntax::MemberSyntax` 内，并且不能爬到文件根节点；模块体内的 `localparam` 会先归位到它的语句包装节点，因此参数声明的分组同样有效。
+其一，上方注释块必须与声明**直接相邻**：注释与声明之间出现空行时，那行注释不再属于这个声明，也不再属于它所在的声明组；块**上方**隔多少空行都不影响取到块。
 
-按用户决定采用不带闸的继承：独占一行的注释块会共享给整组连续声明。代价与实例写在 S2.3；`raw` 模式、`Driven by` 段、函数/类的头部行都不在范围内（S3）。
+其二，带限定符的声明也能取到自己的注释块了。slang 把限定符放在包装节点上（`ClassMethodDeclaration('virtual')`、`ClassPropertyDeclaration('local')`），注释挂在包装节点的首 token 上，而 hover 渲染的是内层声明（`FunctionDeclaration('function')`），旧规则「取首个 token 相同的、最外层的祖先」因此停在内层声明、永远看不到注释。现在上爬会接受按 kind 列举的限定符包装节点（`ClassMethodDeclaration` / `ClassPropertyDeclaration` / `ParameterDeclarationStatement`）：`virtual`/`static`/`local function`、`local logic p1;`、`rand int p2;`、`(* keep *) function`、`localparam` 都有注释，限定符或属性独占一行时也照样取到。容器（无名 generate 块与 region、语句块、列表、module/class 本体）一律不上爬——它们的首 token（`begin`、`generate`）和限定符一样是个「词」、本身也是 `MemberSyntax`，用启发式区分会在一行写法里把成员自己的注释弄丢、把容器的注释算到成员头上，所以改成显式列举。
 
 **Verification**
 
 - `cmake --build build/win64-release --target server_unittests`（Windows，先 `call ...\vcvars64.bat`）：PASS
-- `build/win64-release/bin/server_unittests.exe`：PASS — 377 用例 / 62575 断言全绿；改动前基线 360 用例 / 62523 断言全绿
-- golden：`--update` 后 3 个文件变化（`FindSymbolRefHdl.out`、`FindSymbolRefMacro.out`、`LoadTransitivePackages.out`，合计 68 增 68 删），逐条提取插入片段核对，全部是「组头注释共享给同组声明」这一条规则的预期结果（`hdl_test.sv:94/110/279`、`macros.svh:56`、`cycle_test.sv:10`）；`--update` 在 Windows 写出 CRLF，已还原为 `.gitattributes` 约定的 LF，还原后重跑仍全绿
-- `clang-format --dry-run --Werror --style=file:.clang-format src/util/Formatting.cpp tests/cpp/HoverTests.cpp`：exit 0（用 VS 自带 v22；仓库 pin 的是 v20.1.8，故为近似）
-- 独立复审两轮：首轮报出的 2 个 critical（指令 trivia 破坏行归属、文件首个 token 走丢）、1 个 moderate（多行声明头部行）、1 个格式问题与 1 处规格与代码不符已全部修掉并被复审确认；第二轮只剩规格表述过度声称（函数/类头部），已按实际行为收窄
-- **未验证**：真实编辑器/扩展宿主内的端到端表现——本机没有可运行的扩展宿主测试装置（`integration/runTest.ts` 需要下载 VS Code），hover 文本只在 C++ 测试框架内验证
+- `build/win64-release/bin/server_unittests.exe`：PASS — **505 用例 / 500 通过 / 5 跳过 / 0 失败，66892 断言全过**（本次改动前基线 496 用例 / 66841 断言；5 个跳过是 Windows 目录符号链接的既有跳过）。运行需要把 `TMP`/`TEMP` 指到仓库内可写目录并把该目录建出来，否则 `temp_directory_path` 直接抛异常（见 AGENTS.md）
+- `Hover*` 过滤跑：PASS — 480 断言 / 59 用例
+- golden：默认运行即比对（`GoldenTestBase` 不一致就 `FAIL_CHECK`），全绿说明**没有 golden 变动**——既有测试数据里没有「注释与声明隔空行」或「带限定符的声明」这两种形状
+- 失败优先的实证：修复前探针输出中 hover `a` 的注释段含 `Doc for a.`、`vf` 的注释段整个为空；generate 块那次回归由临时去掉判定复现（`HoverDocCommentInsideGenerateBlocks` 9 个断言里 4 个失败：1 处错误归属 + 3 处丢掉自己的注释），加回后全绿
+- `clang-format --dry-run --Werror --style=file:.clang-format src/util/Formatting.cpp tests/cpp/HoverTests.cpp`：exit 0（本机 clang-format 22.1.3，仓库 pin v20.1.8，为近似）
+- 独立复审三轮：首轮报出 1 个 critical（上爬把无名 generate 块/region 当包装节点）与 2 个规格缺陷（限定符那一半没有验收项、`S2.3` 描述过时）；修完复审在**一行** `begin … end` / `generate … endgenerate` 形状上又找到同类残留（并给出 kind 列举的建议）；按建议改成显式列举后复审确认
+- **未验证**：真实编辑器里的观感——本机没有可运行的扩展宿主测试装置（`integration/runTest.ts` 需要下载 VS Code），hover 文本只在 C++ 测试框架内验证
+- **已知代价**（`S4.2` 的 Out of scope）：包装节点是闭集合，slang 新增一种限定符包装节点时要在 `isQualifierWrapper` 补一条，否则该声明的注释不显示（不会错误归属）
 
 **Journey log**
 
-- slang 的注释是 leading trivia，token 没有 trailing trivia：某行的行尾注释实际挂在**下一个 token** 上。加上 `findLeadingDocCommentStart` 要求注释块后面另有一个换行，两件事叠起来才解释了「上一行的行尾注释既不显示、也不会被误当成下一行文档注释」这个现状。
-- 指令 trivia 自带换行、且上一行的行尾注释挂在指令**自己的首个 token** 上。只按 `TriviaKind::EndOfLine` 判断行边界会同时造成两种错：声明后面紧跟 `` `ifdef `` 时丢注释，以及 `` `define Z 1 // width `` 那一行的注释被算到上一条声明头上；现在靠 `trivia.syntax()->getFirstToken().trivia()` 那一支解决（第二轮的复审用它自己的探针逐条确认过）。
-- 模块体内的 `localparam` 被包成 `ParameterDeclarationStatement`，端口声明后面跟着 `,`：只看紧邻 token 会漏掉这两种形状的行尾注释，所以扫描要在同一行内继续往后走。同理 `selectDisplayNode` 决定 hover 渲染哪个节点，也就决定行尾注释取自哪一行——函数/类不换成头部，于是只取声明结束那一行。
-- `getDeclarationElement` 按「首个 token 相同的祖先」上爬会一路爬到 CompilationUnit；文件首个 token 属于某条声明时（例如文件以 `typedef` 开头），后续所有基于父节点的遍历都会静默空转，行尾注释整个丢失。上爬必须停在根节点之前。
-- 未纳入本次范围、需要时再单开：文件第 0 字节处的 leading 注释块识别不到（`findLeadingDocCommentStart` 要求注释前面有一个换行）——先于本次改动就存在，因此第一次行尾注释也连带看不到。
-
+- slang 的注释是 leading trivia，token 没有 trailing trivia：某行的行尾注释实际挂在**下一个 token** 上；而 `findLeadingDocCommentStart` 要求注释块前面另有一个换行，两条叠起来才解释了「上一行的行尾注释既不显示、也不会被误当成下一行文档注释」。
+- 「注释与声明之间隔空行」和「带限定符的声明」看着像同一个 bug，根因不同：前者是反向扫描没统计注释**下方**的换行，后者是注释挂在包装节点首 token 上。定位靠探针把 `getDefinitionInfoAt` 的祖先链和每个祖先首 token 的 trivia 打出来；一开始怀疑「是不是 9eba50c 之后修的」也用 `git diff 9eba50c HEAD -- src/util/Formatting.cpp`（空）排除掉了。
+- 想用「父节点不是语句 + 前面只有限定符」把包装节点和容器分开，失败了两次：无名 generate 块的 `begin` 与 region 的 `generate` 都是词、块本身也是 `MemberSyntax`，所以「不是语句」拦不住（多行写法靠「声明不在行首」勉强挡住，一行写法照样漏）；评审用「具名块 `begin : n` 正常、无名块异常」这个差异把根因钉在「容器被当成包装节点」上。最后还是显式列举 kind 才彻底干净，顺带把「限定符独占一行取不到注释」的限制也解决了——启发式每加一条都在制造新的误判面。
+- 组头继承复用同一个起点，所以限定符那一半同时修好了「`virtual function a();` 的组头注释传给同组 `static function b();`」这种形状。
 ## [S1] Problem
 
 hover 只显示声明**上方独占一行**的注释块，同一条语句**行尾**的注释永远不会出现。
@@ -93,7 +94,7 @@ hover 的注释段按顺序由两部分拼成**一段**（沿用现有的逐行�
 
 「组头注释 = 连续一组同级成员声明**最上方**那个独占一行的注释块」，因此第二条及之后的声明也能看到它。
 
-从 `getDeclarationElement(node)` 出发向上走——先取「首个 token 与该节点相同的、最外层的祖先」，另外也接受**只带限定符、与声明同一行的包装节点**（`S4.2` 给出了三条判定），但**不爬到文件根节点**（根没有父节点也没有同级，爬上去会让后续遍历直接空转）。这样模块体里的 `localparam` 会先归位到 `ParameterDeclarationStatement`、类里的 `virtual function` 会归位到 `ClassMethodDeclaration`，它们才是真正排在成员列表里的那一项，组头继承因此对参数声明与带限定符的方法同样生效。随后：
+从 `getDeclarationElement(node)` 出发向上走——先取「首个 token 与该节点相同的、最外层的祖先」，另外也接受按 kind 列举的限定符包装节点（见 `S4.2`），但**不爬到文件根节点**（根没有父节点也没有同级，爬上去会让后续遍历直接空转）。这样模块体里的 `localparam` 会先归位到 `ParameterDeclarationStatement`、类里的 `virtual function` 会归位到 `ClassMethodDeclaration`，它们才是真正排在成员列表里的那一项，组头继承因此对参数声明与带限定符的方法同样生效。随后：
 
 1. 该元素自己有上方注释块 → 用它，结束。
 2. 否则取「同一父节点下、紧邻的上一个成员声明」 `P`：
@@ -210,8 +211,9 @@ hover `vf` 的注释段是空的（`static function`、`local function`、`local
 - [x] T3: 组头注释继承 — 验收：组内第 2、3 条声明 hover 显示组头注释 + 自己的行尾注释；空行分隔、模块头、跨类型非成员节点都不会误继承（covers: S2.3；depends: T1, T2）
 - [x] T4: 回归测试 — 验收：`tests/cpp/HoverTests.cpp` 新增用例覆盖 T2/T3 的正例与边界（空行、宏展开声明、`plaintext` 模式、`raw` 模式不变），`--update` 后无 golden 意外变动（covers: S2.2, S2.3, S2.5；depends: T2, T3）
 - [x] T5: 构建 + 全量测试 — 验收：`cmake --build build/win64-release --target server_unittests && build/win64-release/bin/server_unittests.exe` 全绿（covers: S2.2, S2.3, S2.5）
-- [ ] T6: 相邻性判定 — `src/util/Formatting.cpp` 的 `findLeadingDocCommentStart` 在反向扫描中要求注释块与声明之间只有一个换行 — 验收：`/// Doc for a.` + 空行 + `logic a;` 的 hover 不再出现 `Doc for a.`，而 `/// Doc for a.` 直接相邻时仍出现（covers: S4.1）
-- [ ] T7: 回归测试 — `tests/cpp/HoverTests.cpp` 覆盖行注释与块注释两种写法、组头继承不跨空行、上方空行不误伤 — 验收：全量 `server_unittests` 全绿且 golden 无意外变动（covers: S4.1；depends: T6）
-- [ ] T8: 限定符包装节点的上爬 — `getDeclarationElement` 接受按 kind 列举的限定符包装节点（`ClassMethodDeclaration` / `ClassPropertyDeclaration` / `ParameterDeclarationStatement`），容器一律不上爬 — 验收：`virtual function`、`static function`、`local function`、`local logic`、`rand int`、`(* keep *) function`、`localparam` 的 hover 都显示各自的注释，`(* keep *)` 或 `virtual` 独占一行时同样显示（covers: S4.2）
-- [ ] T9: 上爬边界回归测试 — 单行 module/类首成员/端口列表/语句块/无名 `if`-`else` 与 `for` generate 块/`generate` region（含一行的 `begin /* doc */ logic x; end` 与 `generate logic w; endgenerate`）都不得把外层注释算进来，也不得丢掉自己的注释 — 验收：全量 `server_unittests` 全绿（covers: S4.2；depends: T8）
-- [ ] T10: 构建 + 全量测试 — 验收：`server_unittests` 全绿且 golden 无意外变动（covers: S4.1, S4.2；depends: T7, T9）
+- [x] T6: 相邻性判定 — `src/util/Formatting.cpp` 的 `findLeadingDocCommentStart` 在反向扫描中要求注释块与声明之间只有一个换行 — 验收：`/// Doc for a.` + 空行 + `logic a;` 的 hover 不再出现 `Doc for a.`，而 `/// Doc for a.` 直接相邻时仍出现（covers: S4.1）
+- [x] T7: 回归测试 — `tests/cpp/HoverTests.cpp` 覆盖行注释与块注释两种写法、组头继承不跨空行、上方空行不误伤 — 验收：全量 `server_unittests` 全绿且 golden 无意外变动（covers: S4.1；depends: T6）
+- [x] T8: 限定符包装节点的上爬 — `getDeclarationElement` 接受按 kind 列举的限定符包装节点（`ClassMethodDeclaration` / `ClassPropertyDeclaration` / `ParameterDeclarationStatement`），容器一律不上爬 — 验收：`virtual function`、`static function`、`local function`、`local logic`、`rand int`、`(* keep *) function`、`localparam` 的 hover 都显示各自的注释，`(* keep *)` 或 `virtual` 独占一行时同样显示（covers: S4.2）
+- [x] T9: 上爬边界回归测试 — 单行 module/类首成员/端口列表/语句块/无名 `if`-`else` 与 `for` generate 块/`generate` region（含一行的 `begin /* doc */ logic x; end` 与 `generate logic w; endgenerate`）都不得把外层注释算进来，也不得丢掉自己的注释 — 验收：全量 `server_unittests` 全绿（covers: S4.2；depends: T8）
+- [x] T10: 构建 + 全量测试 — 验收：`server_unittests` 全绿且 golden 无意外变动（covers: S4.1, S4.2；depends: T7, T9）
+
