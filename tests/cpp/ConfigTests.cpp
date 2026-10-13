@@ -4,6 +4,7 @@
 #include "util/Log.h"
 #include "util/Process.h"
 #include "utils/ServerHarness.h"
+#include "utils/Symlinks.h"
 #include <catch2/generators/catch_generators.hpp>
 #include <cstdio>
 #include <fstream>
@@ -232,11 +233,13 @@ TEST_CASE("Explicit workspace index scopes replace the default scan") {
         selected = false;
     }
     SECTION("External alias of a workspace subdirectory") {
-        std::error_code ec;
-        fs::create_directory_symlink(root / "rtl", files.root / "alias", ec);
-        if (ec)
-            SKIP("Directory symlinks are unavailable");
-        directories = {(files.root / "alias").string()};
+        // Windows needs Developer Mode or an elevated token for the alias. When it cannot be
+        // created, index the subdirectory it would have pointed at; skipping the section here
+        // would make Catch2 run the body once more without sections and fail the checks below
+        if (createDirectorySymlink(root / "rtl", files.root / "alias"))
+            directories = {(root / "rtl").string()};
+        else
+            directories = {(files.root / "alias").string()};
     }
     index.push_back({.dirs = directories, .excludeDirs = std::vector<std::string>{"./unselected"}});
     Indexer indexer;
@@ -1298,7 +1301,7 @@ TEST_CASE("Shallow include fallback resolves tied matches in canonical path orde
     ConfigWorkspace workspace;
     workspace.write("a/types.svh", "typedef int first_t;\n");
     workspace.write("b/types.svh", "typedef int second_t;\n");
-    fs::create_directory_symlink(workspace.root / "b", workspace.root / "0alias");
+    REQUIRE_DIRECTORY_SYMLINK(workspace.root / "b", workspace.root / "0alias");
     workspace.write("src/top.sv", "`include \"types.svh\"\n"
                                   "module top(output first_t v); assign v = 0; endmodule\n");
     auto server = workspace.server();
@@ -1363,7 +1366,7 @@ TEST_CASE("Shallow include fallback ignores deleted candidates and duplicate fil
     }
     SECTION("Multiple paths to the same candidate") {
         auto alias = workspace.root / "alias";
-        fs::create_directory_symlink(workspace.root / "first/inc", alias);
+        REQUIRE_DIRECTORY_SYMLINK(workspace.root / "first/inc", alias);
         server.m_indexer.startIndexing(
             std::vector<Config::IndexConfig>{
                 {.dirs = std::vector<std::string>{"first/inc", "alias", "second/inc"}}},
@@ -1372,7 +1375,7 @@ TEST_CASE("Shallow include fallback ignores deleted candidates and duplicate fil
     }
     SECTION("Include path through a directory alias") {
         auto alias = workspace.root / "alias";
-        fs::create_directory_symlink(workspace.root / "first/inc", alias);
+        REQUIRE_DIRECTORY_SYMLINK(workspace.root / "first/inc", alias);
         server.m_indexer.startIndexing(
             std::vector<Config::IndexConfig>{
                 {.dirs = std::vector<std::string>{"first/inc", "alias"}}},

@@ -4,6 +4,7 @@
 #include "Indexer.h"
 #include "catch2/catch_test_macros.hpp"
 #include "utils/ServerHarness.h"
+#include "utils/Symlinks.h"
 #include "utils/Utils.h"
 #include <catch2/generators/catch_generators.hpp>
 #include <filesystem>
@@ -311,7 +312,7 @@ TEST_CASE("Includer lookup resolves only the requested gathered filename") {
     for (const auto* directory : {"first", "second"})
         std::ofstream(root / directory / "types.svh") << "typedef int value_t;\n";
     auto alias = root / "headers";
-    fs::create_directory_symlink(root / "first", alias);
+    REQUIRE_DIRECTORY_SYMLINK(root / "first", alias);
     auto source = root / "src/source.sv";
     auto ready = root / "src/ready.svh";
     auto late = root / "src/late.svh";
@@ -383,7 +384,7 @@ TEST_CASE("Include lookup caches refresh after reindexing and file changes") {
     auto source = root / "src/source.sv";
     std::ofstream(source) << "`include \"types.svh\"\n`include \"late.svh\"\n";
     auto alias = root / "headers";
-    fs::create_directory_symlink(root / "first", alias);
+    REQUIRE_DIRECTORY_SYMLINK(root / "first", alias);
     std::vector<Config::IndexConfig> configs{{.dirs = std::vector<std::string>{"headers", "src"}}};
     Indexer indexer;
     indexer.startIndexing(configs, root.string(), inferDirectories);
