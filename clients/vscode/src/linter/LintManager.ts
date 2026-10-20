@@ -55,13 +55,10 @@ export class LintManager extends ExtensionComponent {
         }
       }),
 
-      vscode.window.onDidChangeActiveTextEditor((editor) => {
-        // With a top file the target does not depend on the editor, so moving between
-        // files cannot change what the linters would report
-        if (editor && !this.source?.topFile && isAnyVerilog(editor.document.languageId)) {
-          this.scheduleLint()
-        }
-      }),
+      // Moving focus to another file deliberately does not lint: a run would replace
+      // the diagnostics on screen with those of the newly focused file, which is not
+      // what the user asked for by merely looking at it. Without a top file, the next
+      // save lints whatever editor is active at that point.
 
       this.onConfigUpdated(() => {
         for (const linter of this.linters) {
